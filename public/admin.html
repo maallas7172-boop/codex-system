@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1f6feb" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="manifest.json" />
+<title>لوحة مدير النظام — إدارة الحسابات</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">🧮</div>
+      <div class="t">إدارة الحسابات<small>لوحة مدير النظام</small></div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-page="dash"><span class="ic">📊</span> لوحة التحكم</button>
+      <button class="nav-btn" type="button" onclick="location.href='entry.html'"><span class="ic">📝</span> إدخال تقرير</button>
+      <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
+      <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
+      <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
+    </nav>
+    <div class="side-foot">
+      <div class="user-box">
+        <div class="av">👑</div>
+        <div class="nm"><span id="adminName">مدير النظام</span><small>مدير النظام</small></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn btn-secondary btn-sm" onclick="triggerInstantBackup()" style="flex:1;font-size:11px;padding:7px 3px" title="حفظ وتحديث نسخة احتياطية فورية على القرص C ومجلد البرنامج">💾 حفظ نسخة</button>
+        <button class="btn btn-outline btn-sm" onclick="openServerConfigModal()" style="flex:1;font-size:11px;padding:7px 3px" title="تحديد عنوان IP الخاص بالسيرفر المركزي">🌐 الخادم</button>
+        <button class="btn btn-outline btn-sm" onclick="logout()" style="flex:1;font-size:11px;padding:7px 3px">🚪 خروج</button>
+      </div>
+      <button class="btn btn-outline btn-sm pwa-install-btn" onclick="triggerPWAInstall()" style="width:100%;margin-top:8px;font-size:11.5px;padding:6px" type="button">📲 تثبيت التطبيق على الجهاز</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ==================== لوحة التحكم ==================== -->
+    <section class="page active" id="dashPage">
+      <div class="page-head">
+        <div>
+          <h2>لوحة التحكم</h2>
+          <p>إحصائيات حية عن التقارير والمستخدمين في النظام.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:18px">
+        <div class="field" style="flex:1">
+          <span>🔍 بحث سريع في لوحة التحكم</span>
+          <input type="text" id="dashSearch" placeholder="ابحث برقم التقرير، موضوع، جهة، مستخدم، أو كلمة دلالية..." />
+        </div>
+      </div>
+
+      <div class="kpis" id="kpiGrid"></div>
+
+      <div class="grid-2" style="margin-top:18px">
+        <div class="card">
+          <h3 style="margin-bottom:14px">🎯 تصنيف أهمية التقارير</h3>
+          <div class="mini-list" id="ratingDist"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:14px">👥 تقارير كل مستخدم</h3>
+          <div class="mini-list" id="perUserDist"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h3 style="margin-bottom:14px">🆕 أحدث التقارير في النظام</h3>
+        <div class="table-wrap">
+          <table class="recent-table">
+            <thead><tr><th>الرقم</th><th>الموضوع</th><th>المدخل</th><th>التاريخ</th><th>التصنيف</th></tr></thead>
+            <tbody id="latestReports"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== التقارير ==================== -->
+    <section class="page" id="reportsPage">
+      <div class="page-head">
+        <div>
+          <h2>التقارير</h2>
+          <p>عرض وتصفية التقارير مع إمكانية الطباعة المخصصة (إجمالية / تفصيلية) والتصدير إلى Word و PDF.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="openPrintChoiceBtn" title="خيارات طباعة وتصدير التقارير المفلترة">🖨️ طباعة التقارير المفلترة</button>
+          <button class="btn btn-primary" onclick="renderReports()">🔄 تحديث القائمة</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="field" style="flex:1.5"><span>بحث</span><input type="text" id="rSearch" placeholder="ابحث برقم التقرير، الموضوع، الجهة، أو التفاصيل..." /></div>
+        <div class="field tight"><span>من تاريخ</span><input type="date" id="rFrom" /></div>
+        <div class="field tight"><span>إلى تاريخ</span><input type="date" id="rTo" /></div>
+        <div class="field"><span>اسم المستخدم</span><select id="rUser"></select></div>
+        <div class="field"><span>تقييم التقرير</span><select id="rRating">
+          <option value="">كل التقييمات</option>
+          <option>مهم جدا</option><option>مهم</option><option>متوسط</option><option>عادي</option><option>غير مهم</option>
+        </select></div>
+        <div class="field tight"><span>&nbsp;</span><button class="btn btn-outline" onclick="renderReports()">بحث / تصفية</button></div>
+      </div>
+
+      <div style="font-weight:800;color:var(--muted);margin-bottom:10px" id="repCount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>رقم التقرير</th><th>موضوع التقرير</th><th>الجهة / الشخص</th>
+            <th>التاريخ</th><th>تقييم التقرير</th><th>المرفقات</th><th>إجراءات</th>
+          </tr></thead>
+          <tbody id="reportsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== المستخدمون والصلاحيات ==================== -->
+    <section class="page" id="usersPage">
+      <div class="page-head">
+        <div>
+          <h2>المستخدمون والصلاحيات</h2>
+          <p>إدارة الحسابات وتحديد الصلاحيات المخصصة لكل صفحة وواجهة داخل النظام بدقة وسهولة.</p>
+        </div>
+        <button class="btn btn-primary" id="newUserBtn">➕ إضافة مستخدم</button>
+      </div>
+
+      <!-- نموذج المستخدم -->
+      <div class="card" id="userForm" style="display:none">
+        <div class="page-head" style="margin-bottom:14px">
+          <h3 id="userFormTitle">إضافة مستخدم جديد</h3>
+          <button class="btn btn-outline btn-sm" id="userCancelBtn">إغلاق</button>
+        </div>
+        <div class="form-grid">
+          <div class="field"><span>اسم المستخدم (للدخول) *</span><input type="text" id="ufUserName" placeholder="مثال: ahmed" /></div>
+          <div class="field"><span>الاسم الكامل *</span><input type="text" id="ufFullName" placeholder="مثال: أحمد محمد" /></div>
+          <div class="field"><span>كلمة المرور</span><input type="password" id="ufPassword" placeholder="كلمة المرور" /></div>
+          <div class="field"><span>الحالة</span><label style="flex-direction:row;align-items:center;gap:8px;font-weight:800;color:var(--text)"><input type="checkbox" id="ufActive" checked style="width:auto" /> مستخدم نشط</label></div>
+        </div>
+        <h3 style="margin:20px 0 6px;font-size:15px">🔐 الصلاحيات المخصصة لكل واجهة (يحددها المدير)</h3>
+        <p style="color:var(--muted);font-size:12.5px;margin-bottom:12px">حدد الصفحات والإجراءات المسموح بها لهذا المستخدم:</p>
+        
+        <div class="perm-matrix">
+          <div class="perm-card">
+            <div class="perm-card-head">📊 لوحة التحكم والإحصائيات</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanDash" checked /> فتح لوحة التحكم</label>
+          </div>
+          <div class="perm-card">
+            <div class="perm-card-head">📝 إدخال البيانات والتقارير</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanEntry" checked /> فتح صفحة الإدخال</label>
+            <label class="perm-label"><input type="checkbox" id="ufCanAdd" checked /> إضافة وحفظ تقارير ومسودات</label>
+          </div>
+          <div class="perm-card">
+            <div class="perm-card-head">📄 التقارير والمتابعة</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanReports" checked /> استعراض التقارير</label>
+            <label class="perm-label"><input type="checkbox" id="ufCanEdit" /> تعديل التقارير</label>
+            <label class="perm-label"><input type="checkbox" id="ufCanDelete" /> حذف التقارير</label>
+            <label class="perm-label"><input type="checkbox" id="ufCanPrint" checked /> طباعة التقارير</label>
+          </div>
+          <div class="perm-card">
+            <div class="perm-card-head">👥 المستخدمون والصلاحيات</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanUsers" /> إدارة المستخدمين والصلاحيات</label>
+          </div>
+          <div class="perm-card">
+            <div class="perm-card-head">⚙️ الإعدادات والنسخ الاحتياطي</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanSettings" /> فتح الإعدادات وتنزيل النسخ</label>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:18px">
+          <button class="btn btn-primary" id="userSaveBtn">💾 حفظ المستخدم وصلاحياته</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="field"><span>بحث</span><input type="text" id="userSearch" placeholder="ابحث بالاسم أو اسم المستخدم..." /></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>المستخدم</th><th>الحالة</th><th>الصلاحيات الممنوحة</th><th>تاريخ الإنشاء</th><th>إجراءات</th>
+          </tr></thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- إدارة الأجهزة والهواتف المعتمدة -->
+      <div class="card" style="margin-top:24px">
+        <div class="page-head" style="margin-bottom:12px">
+          <div>
+            <h3 style="display:flex;align-items:center;gap:8px">
+              <span>📱 الهواتف والأجهزة الميدانية المعتمدة</span>
+              <span class="badge warn" id="pendingDevicesBadge" style="display:none">0 بانتظار الاعتماد</span>
+            </h3>
+            <p style="font-size:12.5px;color:var(--muted);margin:0">
+              للأمان والحماية: لا يستطيع أي هاتف الاتصال بالنظام أو رفع تقارير إلا بعد اعتماده وتفعيله من المدير هنا.
+            </p>
+          </div>
+          <button class="btn btn-outline btn-sm" type="button" onclick="renderDevices()">🔄 تحديث قائمة الأجهزة</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>الموظف / الحساب</th>
+              <th>اسم / نوع الجهاز</th>
+              <th>معرّف الجهاز (UUID)</th>
+              <th>تاريخ طلب الربط</th>
+              <th>آخر اتصال</th>
+              <th>الحالة</th>
+              <th>إجراءات المدير</th>
+            </tr></thead>
+            <tbody id="devicesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== الإعدادات ==================== -->
+    <section class="page" id="settingsPage">
+      <div class="page-head">
+        <div>
+          <h2>الإعدادات والنسخ الاحتياطي</h2>
+          <p>إعدادات النظام والنسخ الاحتياطي التلقائي عند الخروج والاتصال بالشبكة.</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 style="margin-bottom:14px">💾 النسخ الاحتياطي والاستعادة</h3>
+          <div class="btn-row">
+            <button class="btn btn-secondary" id="backupBtn">⬇️ تنزيل نسخة احتياطية يدوية</button>
+            <label class="btn btn-outline" style="cursor:pointer">⬆️ استعادة من ملف<input type="file" id="restoreInput" accept=".json" style="display:none" /></label>
+          </div>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:12px;line-height:1.8">
+            يقوم النظام تلقائياً بإنشاء نسخة احتياطية آلياً عند كل عملية خروج وتسجيل الخروج وتنسيق الملفات داخل مجلد البيانات.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom:14px">🌐 الاتصال بالشبكة (المزامنة)</h3>
+          <p style="color:var(--muted);font-size:13px;line-height:1.9;margin:0 0 12px" id="netInfo"></p>
+          <div class="note-box" style="background:var(--secondary-soft);border:1px solid #bfe9df;border-radius:var(--r-md);padding:12px 14px;font-size:12.5px;color:var(--secondary);line-height:1.9">
+            <b>طريقة تشغيل الأجهزة الأخرى:</b> على كل جهاز إدخال، افتح المتصفح واكتب العنوان أعلاه، ثم سجّل الدخول بحسابه.
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== تخصيص ترويسة التقارير ==================== -->
+      <div class="card" style="margin-top:18px">
+        <div class="page-head" style="margin-bottom:14px">
+          <div>
+            <h3 style="font-size:16px;font-weight:900;color:var(--primary-dark)">🏛️ تخصيص ترويسة التقارير الرسمية الموحدة</h3>
+            <p style="color:var(--muted);font-size:13px;margin-top:2px">
+              يمكنك من هنا تعديل نصوص الترويسة والشعار وتغييرها في أي وقت لتتعدل فوراً وتلقائياً على جميع التقارير.
+            </p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field full">
+            <span>أسطر الترويسة في الجانب الأيمن (سطر لكل مستوى إداري)</span>
+            <textarea id="hRightLines" style="min-height:100px;font-weight:700;line-height:1.8" placeholder="الجمهورية اليمنية&#10;محافظة صنعاء&#10;مكتب التربية والتعليم&#10;قسم الرقابة والتفتيش"></textarea>
+            <small style="color:var(--muted);font-size:11.5px;margin-top:4px">اكتب كل سطر في سطر مستقل (السطر الأول سيكون بارزاً وبخط عريض).</small>
+          </div>
+
+          <div class="field">
+            <span>الشعار المعتمد في الترويسة</span>
+            <select id="hLogoSel" style="font-weight:700;color:var(--primary-dark)">
+              <option value="Image/1754379379088.jpg">الشعار الأول (الجمهورية اليمنية)</option>
+              <option value="Image/OIP.gpj.webp">الشعار الثاني (مكتب التربية والتعليم)</option>
+              <option value="custom">📤 رفع صورة شعار جديدة من جهازك...</option>
+            </select>
+            <input type="file" id="hLogoFile" accept="image/*" style="display:none;margin-top:8px" />
+          </div>
+
+          <div class="field">
+            <span>نوع خط الترويسة الرسمي</span>
+            <select id="hFontSel" style="font-weight:700;color:var(--primary-dark)">
+              <option value="amiri">الخط الأميري الملكي (رسمي كلاسيكي - مثل النموذج)</option>
+              <option value="ruqaa">خط الرقعة العربي الأنيق</option>
+              <option value="cairo">خط كايرو العصري</option>
+              <option value="default">الخط الافتراضي</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <span>البسملة فوق الشعار</span>
+            <div style="display:flex;gap:10px;align-items:center">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;white-space:nowrap">
+                <input type="checkbox" id="hShowBasmala" checked /> إظهار
+              </label>
+              <input type="text" id="hBasmalaText" value="بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ" style="flex:1" placeholder="نص البسملة" />
+            </div>
+          </div>
+
+          <div class="field">
+            <span>درجة السرية / الوسام العلمي</span>
+            <input type="text" id="hConfidential" placeholder="مثال: خاص وسري (أو اتركه فارغاً لإخفائه)" value="خاص وسري" />
+          </div>
+        </div>
+
+        <!-- المعاينة الحية للترويسة -->
+        <div style="margin-top:18px">
+          <span style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;display:block">👁️ معاينة مباشرة لشكل الترويسة في التقارير:</span>
+          <div id="hLivePreview" style="border:2px dashed var(--line);border-radius:10px;padding:12px;background:#fff;overflow:hidden"></div>
+        </div>
+
+        <div class="btn-row" style="margin-top:18px">
+          <button class="btn btn-primary" id="hSaveBtn">💾 حفظ وتطبيق الترويسة على جميع التقارير</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- نافذة تفاصيل التقرير -->
+<div class="modal-back" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>📄 تفاصيل التقرير</h3>
+      <button class="x-btn" id="mCloseBtn">✕</button>
+    </div>
+    <div class="modal-body" id="mDetailBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" id="mPrintBtn">🖨 طباعة التقرير</button>
+    </div>
+  </div>
+</div>
+
+<!-- نافذة خيارات الطباعة والتصدير للتقارير -->
+<div class="modal-back" id="printModalBack">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <h3>🖨️ خيارات طباعة وتصدير التقارير المفلترة</h3>
+      <button class="x-btn" id="pCloseBtn">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <div style="font-weight:700;color:var(--text);margin-bottom:14px;font-size:14px">
+        حدد طريقة العرض والطباعة للتقارير المحددة حالياً (<span id="printModalCount" style="color:var(--primary);font-weight:900">0</span> تقرير):
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+        <button class="btn btn-outline" id="btnPrintSummary" style="padding:16px 12px;display:flex;flex-direction:column;gap:6px;text-align:center;border-width:2px;border-color:var(--primary)">
+          <span style="font-size:26px">📊</span>
+          <b style="font-size:14.5px;color:var(--primary-dark)">طباعة إجمالية</b>
+          <span style="font-size:12px;color:var(--muted);line-height:1.5">كشف ملخص بجدول منظم للتقارير</span>
+        </button>
+        <button class="btn btn-outline" id="btnPrintDetailed" style="padding:16px 12px;display:flex;flex-direction:column;gap:6px;text-align:center;border-width:2px;border-color:var(--secondary)">
+          <span style="font-size:26px">📑</span>
+          <b style="font-size:14.5px;color:var(--secondary)">طباعة تفصيلية</b>
+          <span style="font-size:12px;color:var(--muted);line-height:1.5">طباعة كافة التقارير كاملة ببياناتها وصورها</span>
+        </button>
+      </div>
+      <div style="border-top:1px dashed var(--line);padding-top:14px">
+        <div style="font-size:13px;font-weight:800;color:var(--muted);margin-bottom:10px">📁 خيارات التصدير المباشر:</div>
+        <div class="btn-row" style="gap:8px">
+          <button class="btn btn-secondary btn-sm" id="btnExportWordSummary" style="flex:1">📥 تصدير Word (إجمالي)</button>
+          <button class="btn btn-secondary btn-sm" id="btnExportWordDetailed" style="flex:1">📥 تصدير Word (تفصيلي)</button>
+          <button class="btn btn-outline btn-sm" id="btnExportPdfChoice" style="flex:1">📄 تصدير PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- قوائم الكتابة المنسدلة -->
+<datalist id="dlRel"><option>عالية</option><option>متوسط</option><option>منخفض</option></datalist>
+<datalist id="dlStatus"><option>نشط</option><option>متقطع</option><option>غير نشط</option></datalist>
+<datalist id="dlAch"><option>ممتاز</option><option>جيد</option><option>متوسط</option><option>مقبول</option><option>ضعيف</option></datalist>
+<datalist id="dlRating"><option>مهم جدا</option><option>مهم</option><option>متوسط</option><option>عادي</option><option>غير مهم</option></datalist>
+
+<script src="js/config.js?v=20260901-8"></script>
+<script src="js/app.js?v=20260901-8"></script>
+<script src="js/report-header.js?v=20260901-8"></script>
+<script src="js/admin.js?v=20260901-8"></script>
+</body>
+</html>

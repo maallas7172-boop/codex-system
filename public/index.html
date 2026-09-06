@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1f6feb" />
+<title>إدارة الحسابات</title>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script>
+  (function () {
+    const cached = getCachedMe();
+    const token = localStorage.getItem('session_token');
+    
+    // إذا كان المستخدم قد دخل مسبقاً وتوجد بياناته محلياً على الهاتف
+    if (cached && cached.user) {
+      const u = cached.user;
+      const hasAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
+      location.replace(hasAdmin ? 'admin.html' : 'entry.html');
+      return;
+    }
+    
+    // إذا وجد رمز جلسة محفوظ
+    if (token) {
+      location.replace('entry.html');
+      return;
+    }
+    
+    // غير مسجل دخول
+    location.replace('login.html');
+  })();
+</script>
+</head>
+<body></body>
+</html>

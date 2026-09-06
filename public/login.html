@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#1f6feb" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="manifest.json" />
+<title>تسجيل الدخول — إدارة الحسابات</title>
+<link rel="stylesheet" href="css/styles.css" />
+<style>
+  .login-msg{min-height:20px;margin-top:14px;font-size:13.5px;font-weight:700;text-align:center}
+  .login-msg.err{color:var(--danger)}
+  .login-msg.ok{color:var(--success)}
+</style>
+</head>
+<body>
+<main class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo" style="font-size:48px">🧮</div>
+    <h1>إدارة الحسابات</h1>
+    <p class="sub">منظومة إدارة الحسابات والتقارير المالية والميدانية.</p>
+    <form id="loginForm" class="form-grid">
+      <div class="field full">
+        <span>اسم المستخدم</span>
+        <input type="text" id="userName" required autocomplete="username" placeholder="أدخل اسم المستخدم..." />
+      </div>
+      <div class="field full">
+        <span>كلمة المرور</span>
+        <input type="password" id="password" required autocomplete="current-password" placeholder="أدخل كلمة المرور..." />
+      </div>
+      <button type="submit" class="btn btn-primary full" id="loginBtn">دخول</button>
+    </form>
+    <div id="loginMessage" class="login-msg"></div>
+  </div>
+</main>
+<script src="js/config.js?v=20260901-8"></script>
+<script src="js/app.js?v=20260901-8"></script>
+<script src="js/login.js?v=20260901-8"></script>
+</body>
+</html>

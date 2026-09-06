@@ -1,0 +1,26 @@
+{
+  "name": "reports-system",
+  "version": "2.0.0",
+  "description": "نظام إدارة التقارير الميدانية ومتابعتها وتقييم المستخدمين",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "cap:init": "npx @capacitor/cli init \"نظام التقارير\" \"com.company.reportssystem\" --web-dir public",
+    "cap:add:android": "npx @capacitor/cli add android",
+    "cap:sync": "npx @capacitor/cli sync",
+    "cap:open:android": "npx @capacitor/cli open android"
+  },
+  "keywords": [
+    "reports",
+    "system",
+    "sqlite",
+    "mobile",
+    "pwa"
+  ],
+  "author": "Admin System",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1"
+  }
+}
