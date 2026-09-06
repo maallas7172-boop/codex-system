@@ -300,16 +300,7 @@ function seed(){
   demoReports.forEach(r => {
     insR.run(uid(), r.n, r.s, r.target, r.d, r.tm, r.loc, r.det, '[]', r.by, r.uid, r.rate || null, t + 'Z', t + 'Z', t + 'Z');
   });
-  const demoEvals = [
-    { u:ahmed, name:'أحمد محمد', d:'2026-08-25', rel:'عالية', cred:'عالية', acc:'عالية', com:'عالية', str:'دقة عالية في التوثيق، التزام بمواعيد التسليم، قدرة على جمع معلومات ميدانية دقيقة.', weak:'يحتاج تحسين في صياغة التقارير التفصيلية أحياناً.', ach:'ممتاز', st:'نشط' },
-    { u:sara, name:'سارة علي', d:'2026-08-28', rel:'متوسط', cred:'عالية', acc:'متوسط', com:'متوسط', str:'جيدة في جمع البيانات، سرعة في الاستجابة.', weak:'تأخير أحياناً في تسليم التقارير، بعض النواقص في التفاصيل.', ach:'جيد', st:'متقطع' },
-    { u:khaled, name:'خالد حسن', d:'2026-09-01', rel:'منخفض', cred:'متوسط', acc:'منخفض', com:'منخفض', str:'—', weak:'ضعف الالتزام بتسليم التقارير في المواعيد، الحاجة إلى متابعة مستمرة.', ach:'ضعيف', st:'غير نشط' }
-  ];
-  const insE = db.prepare('INSERT INTO evaluations(id,evalNumber,userId,userName,evalDate,reliability,credibility,reportAccuracy,commitment,strengths,weaknesses,achievementLevel,userStatus,evaluatedBy,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  demoEvals.forEach((e, i) => {
-    insE.run(uid(), i+1, e.u, e.name, e.d, e.rel, e.cred, e.acc, e.com, e.str, e.weak, e.ach, e.st, 'admin', t + 'Z');
-  });
-  console.log('✔ تم بذر البيانات التجريبية (مدير + 3 مستخدمين + تقارير + تقييمات)');
+  console.log('✔ تم بذر البيانات الأولية بنجاح');
 }
 
 seed();
