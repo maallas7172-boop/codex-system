@@ -10,19 +10,19 @@ let REPORT_HEADER_CONFIG = {
   rightLines: [
     "الجمهورية اليمنية",
     "محافظة صنعاء",
-    "مكتب التربية والتعليم",
+    "إدارة الحسابات",
     "قسم الرقابة والتفتيش"
   ],
 
-  // مسار أو صورة الشعار المعتمد
+  // مسار أو صورة الشعار المعتمد (شعار الجمهورية اليمنية)
   logoSrc: "Image/1754379379088.jpg",
 
   // إظهار البسملة فوق الشعار
   showBasmala: true,
   basmalaText: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
 
-  // نوع الخط للترويسة (amiri | ruqaa | cairo | default)
-  fontFamily: "amiri",
+  // نوع الخط للترويسة (diwani | amiri | ruqaa | cairo | default)
+  fontFamily: "diwani",
 
   // درجة السرية / الوسام (اختياري: اتركه فارغاً '' لإخفائه)
   confidentialityBadge: "خاص وسري",
@@ -60,8 +60,9 @@ function renderReportHeaderHTML(report, customOpts = {}) {
   const reportTime = r.reportTime || '';
 
   // نوع الخط
-  let fontClass = 'font-amiri';
-  if (cfg.fontFamily === 'ruqaa') fontClass = 'font-ruqaa';
+  let fontClass = 'font-diwani';
+  if (cfg.fontFamily === 'amiri') fontClass = 'font-amiri';
+  else if (cfg.fontFamily === 'ruqaa') fontClass = 'font-ruqaa';
   else if (cfg.fontFamily === 'cairo') fontClass = 'font-cairo';
   else if (cfg.fontFamily === 'default') fontClass = 'font-sans';
 
@@ -131,6 +132,22 @@ function getReportHeaderCSS() {
       background: #ffffff;
       border-radius: 8px;
       direction: rtl;
+    }
+    .report-header-master.font-diwani {
+      font-family: 'Diwani Letter', 'Aref Ruqaa', 'Traditional Arabic', 'Amiri', serif;
+    }
+    .report-header-master.font-diwani .hdr-line-main {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+    }
+    .report-header-master.font-diwani .hdr-line-sub {
+      font-size: 16.5px;
+      font-weight: 700;
+    }
+    .report-header-master.font-diwani .hdr-basmala {
+      font-size: 18px;
+      font-weight: 700;
     }
     .report-header-master.font-amiri {
       font-family: 'Amiri', 'Traditional Arabic', 'Times New Roman', serif;

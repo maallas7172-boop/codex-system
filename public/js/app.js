@@ -109,20 +109,33 @@ function getDeviceName() {
   return name;
 }
 
+function formatServerUrl(raw) {
+  let url = (raw || '').trim().replace(/\/+$/, '');
+  if (!url) return '';
+  if (!/^https?:\/\//i.test(url)) {
+    if (/^(localhost|127\.|192\.168\.|10\.|172\.)/i.test(url)) {
+      url = 'http://' + url;
+    } else {
+      url = 'https://' + url;
+    }
+  }
+  return url.replace(/\/+$/, '');
+}
+
 /* ---------- عنوان السيرفر المركزي (للتطبيق والموبايل) ---------- */
 function getServerBaseUrl() {
   const custom = (localStorage.getItem(SERVER_URL_KEY) || '').trim();
-  if (custom) return custom.replace(/\/+$/, '');
+  if (custom) return formatServerUrl(custom);
   if (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) {
-    if (location.protocol === 'file:' || location.protocol === 'capacitor:' || location.port === '5500' || location.port === '8100') {
-      return APP_CONFIG.defaultServerUrl.replace(/\/+$/, '');
+    if (location.protocol === 'file:' || location.protocol === 'capacitor:' || location.port === '5500' || location.port === '8100' || location.origin.includes('localhost') === false) {
+      return formatServerUrl(APP_CONFIG.defaultServerUrl);
     }
   }
   return '';
 }
 
 function setCustomServerUrl(url) {
-  const clean = (url || '').trim().replace(/\/+$/, '');
+  const clean = formatServerUrl(url);
   if (!clean) {
     localStorage.removeItem(SERVER_URL_KEY);
   } else {
@@ -131,26 +144,28 @@ function setCustomServerUrl(url) {
 }
 
 async function testServerConnection(url) {
-  const base = (url || '').trim().replace(/\/+$/, '');
+  const base = formatServerUrl(url);
   const target = (base ? base : '') + '/api/public/users';
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000);
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(target, {
+      method: 'GET',
+      mode: 'cors',
       signal: controller.signal,
       headers: {
+        'Accept': 'application/json',
         'X-Device-Id': getDeviceId(),
-        'X-Device-Name': encodeURIComponent(getDeviceName()),
-        'Bypass-Tunnel-Reminder': 'true'
+        'X-Device-Name': encodeURIComponent(getDeviceName())
       }
     });
     clearTimeout(timer);
-    if (!res.ok) throw new Error('الخادم استجاب بخطأ ' + res.status);
+    if (!res.ok) throw new Error('الخادم استجاب بكود ' + res.status);
     const data = await res.json();
     return { ok: true, usersCount: (data.users || []).length };
   } catch (err) {
     clearTimeout(timer);
-    throw new Error(err.name === 'AbortError' ? 'انتهت مهلة الاتصال بالخادم' : err.message);
+    throw new Error(err.name === 'AbortError' ? 'انتهت مهلة الاتصال بالخادم (قد يكون السيرفر في وضع الاستيقاظ)' : err.message);
   }
 }
 
@@ -161,7 +176,6 @@ async function api(pathname, opts = {}) {
     'Content-Type': 'application/json',
     'X-Device-Id': getDeviceId(),
     'X-Device-Name': encodeURIComponent(getDeviceName()),
-    'Bypass-Tunnel-Reminder': 'true',
     ...(opts.headers || {})
   };
   if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -463,8 +477,10 @@ function openServerConfigModal() {
     };
   }
 
-  const current = getServerBaseUrl();
-  document.getElementById('cfgServerUrlInput').value = current;
+  const defaultUrl = (typeof APP_CONFIG !== 'undefined' && APP_CONFIG.defaultServerUrl) ? APP_CONFIG.defaultServerUrl : '';
+  const current = getServerBaseUrl() || defaultUrl;
+  const inputEl = document.getElementById('cfgServerUrlInput');
+  if (inputEl) inputEl.value = current;
   const statusDiv = document.getElementById('cfgServerTestStatus');
   if (statusDiv) statusDiv.style.display = 'none';
   m.classList.add('show');

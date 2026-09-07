@@ -32,8 +32,7 @@
           headers: {
             'Content-Type': 'application/json',
             'X-Device-Id': getDeviceId(),
-            'X-Device-Name': encodeURIComponent(getDeviceName()),
-            'Bypass-Tunnel-Reminder': 'true'
+            'X-Device-Name': encodeURIComponent(getDeviceName())
           },
           body: JSON.stringify({ userName, password, passwordHash })
         });

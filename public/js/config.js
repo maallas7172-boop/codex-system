@@ -4,7 +4,7 @@
 const APP_CONFIG = {
   appName: 'إدارة الحسابات',
   version: '2.0.0',
-  // العنوان الافتراضي للسيرفر المركزي السحابي
-  defaultServerUrl: 'https://carlos-rings-maps-abc.trycloudflare.com',
+  // العنوان الافتراضي الدائم للسيرفر السحابي المركزي (شغال 24/7)
+  defaultServerUrl: 'https://codex-system-m32a.onrender.com',
   autoSyncIntervalMs: 15000 // فحص وتكرار المزامنة التلقائية كل 15 ثانية عند عودة الإنترنت
 };

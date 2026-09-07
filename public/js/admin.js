@@ -921,7 +921,7 @@
         $('hConfidential').value = REPORT_HEADER_CONFIG.confidentialityBadge || '';
       }
       if ($('hFontSel')) {
-        $('hFontSel').value = REPORT_HEADER_CONFIG.fontFamily || 'amiri';
+        $('hFontSel').value = REPORT_HEADER_CONFIG.fontFamily || 'diwani';
       }
       if ($('hShowBasmala')) {
         $('hShowBasmala').checked = REPORT_HEADER_CONFIG.showBasmala !== false;
@@ -931,11 +931,13 @@
       }
       if ($('hLogoSel')) {
         const currentSrc = REPORT_HEADER_CONFIG.logoSrc || '';
-        if (currentSrc === 'Image/1754379379088.jpg' || currentSrc === 'Image/OIP.gpj.webp') {
+        if (currentSrc === 'Image/1754379379088.jpg') {
           $('hLogoSel').value = currentSrc;
         } else if (currentSrc) {
           $('hLogoSel').value = 'custom';
           customLogoBase64 = currentSrc;
+        } else {
+          $('hLogoSel').value = 'Image/1754379379088.jpg';
         }
       }
       renderHeaderPreview();
