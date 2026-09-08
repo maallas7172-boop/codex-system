@@ -408,8 +408,24 @@ async function triggerInstantBackup() {
 }
 
 function logout() {
-  try { fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + localStorage.getItem(TOKEN_KEY) } }); } catch (e) {}
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    try {
+      const baseUrl = getServerBaseUrl();
+      fetch((baseUrl ? baseUrl : '') + '/api/logout', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+          'X-Device-Id': getDeviceId(),
+          'X-Device-Name': encodeURIComponent(getDeviceName())
+        }
+      });
+    } catch (e) {}
+  }
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(CACHED_USER_KEY);
+  __me = null;
   location.href = 'login.html';
 }
 

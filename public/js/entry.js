@@ -6,7 +6,7 @@
    ========================================================= */
 (async function () {
   let me = null;
-  try { me = await currentMe(); } catch (e) { return; }
+  try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   if (me.settings && me.settings.reportHeaderConfig && typeof updateReportHeaderConfig === 'function') {
     updateReportHeaderConfig(me.settings.reportHeaderConfig);
   }

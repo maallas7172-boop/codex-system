@@ -3,7 +3,7 @@
    ========================================================= */
 (async function () {
   let me = null;
-  try { me = await currentMe(); } catch (e) { return; }
+  try { me = await currentMe(); } catch (e) { location.replace('login.html'); return; }
   const u = me.user;
   const canAccessAdmin = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
   if (!canAccessAdmin) {
