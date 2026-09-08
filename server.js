@@ -594,6 +594,93 @@ const server = http.createServer(async (req, res) => {
       const q = Object.fromEntries(u.searchParams);
       send(res, 200, { reports: listReports(q) }); return;
     }
+    /* ---- استيراد وتصدير التقارير (JSON) ---- */
+    if (p === '/api/reports/export' && method === 'GET'){
+      if (!can(me, 'canOpen')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية فتح التقارير'); return; }
+      const q = Object.fromEntries(u.searchParams);
+      const reports = listReports(q);
+      const dump = {
+        system: 'إدارة الحسابات',
+        version: '2.0.0',
+        exportedAt: nowIso(),
+        exportedBy: me.fullName,
+        count: reports.length,
+        reports: reports
+      };
+      send(res, 200, dump); return;
+    }
+    if (p === '/api/reports/import' && method === 'POST'){
+      if (!can(me, 'canAdd') && !isAdmin(me)){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية استيراد التقارير'); return; }
+      const b = await readBody(req);
+      let incoming = [];
+      if (Array.isArray(b.reports)) {
+        incoming = b.reports;
+      } else if (Array.isArray(b)) {
+        incoming = b;
+      } else if (b.backup && Array.isArray(b.backup.reports)) {
+        incoming = b.backup.reports;
+      } else {
+        sendError(res, 400, 'صيغة ملف الاستيراد غير صالحة. يجب أن يحتوي الملف على قائمة تقارير.'); return;
+      }
+
+      if (!incoming.length) {
+        sendError(res, 400, 'الملف لا يحتوي على أي تقارير لاستيرادها.'); return;
+      }
+
+      let importedCount = 0;
+      let updatedCount = 0;
+      const t = nowIso();
+
+      const stmtCheckId = db.prepare('SELECT id FROM reports WHERE id=?');
+      const stmtCheckNum = db.prepare('SELECT id FROM reports WHERE reportNumber=?');
+      const stmtInsert = db.prepare('INSERT INTO reports(id,reportNumber,subject,target,logoId,reportDate,reportTime,location,details,images,enteredBy,enteredByUserId,rating,createdAt,updatedAt,syncedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+      const stmtUpdate = db.prepare('UPDATE reports SET reportNumber=?, subject=?, target=?, logoId=?, reportDate=?, reportTime=?, location=?, details=?, images=?, enteredBy=?, enteredByUserId=?, rating=?, updatedAt=?, syncedAt=? WHERE id=?');
+
+      for (const r of incoming) {
+        if (!r || typeof r !== 'object') continue;
+        const subject = String(r.subject || '').trim();
+        if (!subject) continue;
+
+        let repId = String(r.id || '').trim() || uid();
+        let repNum = String(r.reportNumber || '').trim();
+        const target = String(r.target || '');
+        const logoId = String(r.logoId || 'logo1');
+        const reportDate = String(r.reportDate || todayStr());
+        const reportTime = String(r.reportTime || '');
+        const location = String(r.location || '');
+        const details = String(r.details || '');
+        const rating = r.rating ? String(r.rating) : null;
+        const enteredBy = String(r.enteredBy || me.fullName || 'مستورد');
+        const enteredByUserId = String(r.enteredByUserId || me.id);
+        const images = Array.isArray(r.images) ? r.images : [];
+        const createdAt = r.createdAt || t;
+        const syncedAt = r.syncedAt || t;
+
+        const existsById = stmtCheckId.get(repId);
+        if (existsById) {
+          stmtUpdate.run(repNum || getNextReportNumber(), subject, target, logoId, reportDate, reportTime, location, details, JSON.stringify(images), enteredBy, enteredByUserId, rating, t, syncedAt, repId);
+          updatedCount++;
+        } else {
+          if (!repNum || stmtCheckNum.get(repNum)) {
+            repNum = getNextReportNumber();
+          }
+          stmtInsert.run(repId, repNum, subject, target, logoId, reportDate, reportTime, location, details, JSON.stringify(images), enteredBy, enteredByUserId, rating, createdAt, t, syncedAt);
+          importedCount++;
+        }
+      }
+
+      try { createAutoBackup(); } catch(e){}
+
+      send(res, 200, {
+        ok: true,
+        message: `تمت عملية الاستيراد بنجاح! تم استيراد (${importedCount}) تقرير جديد وتحديث (${updatedCount}) تقرير.`,
+        importedCount,
+        updatedCount,
+        total: importedCount + updatedCount
+      });
+      return;
+    }
+
     if (p === '/api/reports' && method === 'POST'){
       if (!can(me, 'canAdd')){ sendError(res, 403, 'لم يمنحك المدير صلاحية الإضافة حالياً'); return; }
       const devAuth = checkDeviceAuth(me, req);

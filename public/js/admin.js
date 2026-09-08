@@ -615,6 +615,91 @@
   if ($('btnExportWordDetailed')) $('btnExportWordDetailed').onclick = () => { $('printModalBack').classList.remove('show'); exportReportsToWord(true); };
   if ($('btnExportPdfChoice')) $('btnExportPdfChoice').onclick = () => { $('printModalBack').classList.remove('show'); printReportsSummary(); };
 
+  /* ================= تصدير واستيراد التقارير (JSON) ================= */
+  if ($('btnExportReportsJson')) {
+    $('btnExportReportsJson').onclick = async () => {
+      if (!currentReports || !currentReports.length) {
+        toast('لا توجد تقارير في القائمة لتصديرها', 'err');
+        return;
+      }
+      try {
+        const dump = {
+          system: 'إدارة الحسابات',
+          version: '2.0.0',
+          exportedAt: new Date().toISOString(),
+          count: currentReports.length,
+          reports: currentReports
+        };
+        const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json;charset=utf-8' });
+        const a = document.createElement('a');
+        const dateStr = (typeof todayStr === 'function' ? todayStr() : new Date().toISOString().slice(0, 10));
+        a.href = URL.createObjectURL(blob);
+        a.download = `تقارير_إدارة_الحسابات_${dateStr}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast(`تم تصدير (${currentReports.length}) تقرير إلى ملف JSON بنجاح ✔`);
+      } catch (err) {
+        toast('تعذر تصدير التقارير: ' + err.message, 'err');
+      }
+    };
+  }
+
+  if ($('btnImportReportsJson')) {
+    $('btnImportReportsJson').onclick = () => {
+      if ($('importReportsFileInput')) {
+        $('importReportsFileInput').value = '';
+        $('importReportsFileInput').click();
+      }
+    };
+  }
+
+  if ($('importReportsFileInput')) {
+    $('importReportsFileInput').onchange = async function () {
+      const file = this.files && this.files[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text);
+        } catch (e) {
+          throw new Error('الملف المحدد ليس ملف JSON صالحاً');
+        }
+
+        let reportsList = [];
+        if (Array.isArray(parsed)) {
+          reportsList = parsed;
+        } else if (parsed && Array.isArray(parsed.reports)) {
+          reportsList = parsed.reports;
+        } else if (parsed && parsed.backup && Array.isArray(parsed.backup.reports)) {
+          reportsList = parsed.backup.reports;
+        } else {
+          throw new Error('لم يتم العثور على قائمة تقارير صالحة داخل الملف');
+        }
+
+        if (!reportsList.length) {
+          throw new Error('الملف لا يحتوي على أي تقارير لاستيرادها');
+        }
+
+        const confirmMsg = `تم العثور على (${reportsList.length}) تقرير في الملف:\n«${file.name}»\n\nهل ترغب في استيرادها وإضافتها إلى النظام الآن؟`;
+        if (!confirm(confirmMsg)) return;
+
+        toast('⏳ جارٍ استيراد ومعالجة التقارير...');
+        const res = await api('/reports/import', {
+          method: 'POST',
+          body: JSON.stringify({ reports: reportsList })
+        });
+
+        toast(res.message || `تم استيراد (${res.importedCount || reportsList.length}) تقرير بنجاح ✔`, 'ok');
+        await renderReports();
+        if (typeof renderDashboard === 'function') renderDashboard();
+      } catch (err) {
+        toast('فشل الاستيراد: ' + err.message, 'err');
+      }
+    };
+  }
+
   /* تعبئة قوائم اختيار المستخدمين (لتصفية التقارير) */
   async function loadUserSelects() {
     try {

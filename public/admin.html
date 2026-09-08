@@ -88,6 +88,9 @@
           <p>عرض وتصفية التقارير مع إمكانية الطباعة المخصصة (إجمالية / تفصيلية) والتصدير إلى Word و PDF.</p>
         </div>
         <div class="btn-row">
+          <button class="btn btn-outline" id="btnExportReportsJson" title="تصدير التقارير المفلترة إلى ملف خارجي (JSON) لنقلها لبرنامج آخر">📤 تصدير إلى ملف (JSON)</button>
+          <button class="btn btn-outline" id="btnImportReportsJson" title="استيراد تقارير من ملف خارجي (JSON) وإدراجها في النظام">📥 استيراد من ملف (JSON)</button>
+          <input type="file" id="importReportsFileInput" accept=".json,application/json" style="display:none" />
           <button class="btn btn-secondary" id="openPrintChoiceBtn" title="خيارات طباعة وتصدير التقارير المفلترة">🖨️ طباعة التقارير المفلترة</button>
           <button class="btn btn-primary" onclick="renderReports()">🔄 تحديث القائمة</button>
         </div>
