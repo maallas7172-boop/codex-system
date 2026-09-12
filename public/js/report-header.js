@@ -9,9 +9,9 @@ let REPORT_HEADER_CONFIG = {
   // أسطر الجهة في الجانب الأيمن (سطر تحت سطر)
   rightLines: [
     "الجمهورية اليمنية",
-    "محافظة صنعاء",
-    "إدارة الحسابات",
-    "قسم الرقابة والتفتيش"
+    "وزارة النقل",
+    "الهيئة العامة لتنظيم شؤون النقل البري",
+    "مكتب رئيس الهيئة"
   ],
 
   // مسار أو صورة الشعار المعتمد (شعار الجمهورية اليمنية)
@@ -66,7 +66,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
   else if (cfg.fontFamily === 'cairo') fontClass = 'font-cairo';
   else if (cfg.fontFamily === 'default') fontClass = 'font-sans';
 
-  // توليد أسطر الجهة على اليمين بشكل مرتب سطر تحت سطر
+  // توليد أسطر الجهة على اليمين بحيث تكون متوسطة فوق بعضها بشكل منظم
   let rightHtml = '';
   let lines = cfg.rightLines;
   if (typeof lines === 'string') {
@@ -79,7 +79,7 @@ function renderReportHeaderHTML(report, customOpts = {}) {
     }).join('');
   } else {
     rightHtml = `
-      <div class="hdr-line-main">${esc(cfg.orgName || '')}</div>
+      <div class="hdr-line-main">${esc(cfg.orgName || 'الجمهورية اليمنية')}</div>
       <div class="hdr-line-sub">${esc(cfg.subTitle || '')}</div>
     `;
   }
@@ -128,7 +128,7 @@ function getReportHeaderCSS() {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 18px;
+      padding: 10px 16px;
       background: #ffffff;
       border-radius: 8px;
       direction: rtl;
@@ -137,17 +137,20 @@ function getReportHeaderCSS() {
       font-family: 'Diwani Letter', 'Aref Ruqaa', 'Traditional Arabic', 'Amiri', serif;
     }
     .report-header-master.font-diwani .hdr-line-main {
-      font-size: 24px;
+      font-size: 23px;
       font-weight: 800;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.5px;
+      text-align: center;
     }
     .report-header-master.font-diwani .hdr-line-sub {
-      font-size: 16.5px;
+      font-size: 15.5px;
       font-weight: 700;
+      text-align: center;
     }
     .report-header-master.font-diwani .hdr-basmala {
       font-size: 18px;
       font-weight: 700;
+      text-align: center;
     }
     .report-header-master.font-amiri {
       font-family: 'Amiri', 'Traditional Arabic', 'Times New Roman', serif;
@@ -165,34 +168,41 @@ function getReportHeaderCSS() {
     .hdr-col {
       display: flex;
       flex-direction: column;
-      flex: 1;
     }
     .hdr-right {
-      text-align: right;
+      flex: 1 1 0%;
+      text-align: center;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 3px;
+      align-items: center;
+      gap: 2px;
     }
     .hdr-line-main {
       font-size: 21px;
-      font-weight: 700;
+      font-weight: 800;
       color: #0f172a;
       line-height: 1.35;
       letter-spacing: 0.3px;
+      text-align: center;
+      width: 100%;
+      margin: 0 auto 2px auto;
     }
     .hdr-line-sub {
-      font-size: 15.5px;
+      font-size: 14.5px;
       font-weight: 700;
       color: #334155;
       line-height: 1.35;
+      text-align: center;
+      width: 100%;
+      margin: 0 auto;
     }
     .hdr-center {
+      flex: 0 0 auto;
       text-align: center;
       align-items: center;
       justify-content: center;
       padding: 0 16px;
-      flex: 0 0 auto;
     }
     .hdr-basmala {
       font-size: 16px;
@@ -219,16 +229,21 @@ function getReportHeaderCSS() {
     }
     .hdr-confidential-tag {
       display: inline-block;
-      padding: 2px 10px;
-      background: #ffebe9;
-      color: #cf222e;
-      border: 1px solid #ff8182;
+      padding: 3px 12px;
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fca5a5;
       border-radius: 12px;
-      font-size: 11px;
-      font-weight: 700;
-      margin: 0 auto;
+      font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.3px;
+      margin: 4px auto 0 auto;
+      line-height: 1.35;
+      text-shadow: none !important;
     }
     .hdr-left {
+      flex: 1 1 0%;
       text-align: left;
       font-size: 13.5px;
       color: #1e293b;
@@ -236,15 +251,17 @@ function getReportHeaderCSS() {
       flex-direction: column;
       justify-content: center;
       gap: 4px;
-      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
     }
     .hdr-info-item {
       display: flex;
       justify-content: flex-end;
       gap: 6px;
+      font-family: 'Segoe UI', Tahoma, 'Cairo', Arial, sans-serif !important;
     }
     .hdr-info-item b {
       color: #64748b;
+      font-weight: 700;
     }
     .report-header-line {
       height: 3px;

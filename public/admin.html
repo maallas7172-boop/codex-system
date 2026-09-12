@@ -91,6 +91,7 @@
           <button class="btn btn-outline" id="btnExportReportsJson" title="تصدير التقارير المفلترة إلى ملف خارجي (JSON) لنقلها لبرنامج آخر">📤 تصدير إلى ملف (JSON)</button>
           <button class="btn btn-outline" id="btnImportReportsJson" title="استيراد تقارير من ملف خارجي (JSON) وإدراجها في النظام">📥 استيراد من ملف (JSON)</button>
           <input type="file" id="importReportsFileInput" accept=".json,application/json" style="display:none" />
+          <button class="btn btn-danger" id="btnBatchDeleteReports" style="display:none" title="حذف كافة التقارير المحددة">🗑️ حذف المحدد (<span id="selectedReportsCount">0</span>)</button>
           <button class="btn btn-secondary" id="openPrintChoiceBtn" title="خيارات طباعة وتصدير التقارير المفلترة">🖨️ طباعة التقارير المفلترة</button>
           <button class="btn btn-primary" onclick="renderReports()">🔄 تحديث القائمة</button>
         </div>
@@ -112,6 +113,7 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
+            <th style="width:42px;text-align:center" id="thSelectAllReports"><input type="checkbox" id="selectAllReportsChk" title="تحديد كل التقارير الظاهرة" style="cursor:pointer;width:16px;height:16px" /></th>
             <th>رقم التقرير</th><th>موضوع التقرير</th><th>الجهة / الشخص</th>
             <th>التاريخ</th><th>تقييم التقرير</th><th>المرفقات</th><th>إجراءات</th>
           </tr></thead>
@@ -278,8 +280,8 @@
         <div class="form-grid">
           <div class="field full">
             <span>أسطر الترويسة في الجانب الأيمن (سطر لكل مستوى إداري)</span>
-            <textarea id="hRightLines" style="min-height:100px;font-weight:700;line-height:1.8" placeholder="الجمهورية اليمنية&#10;محافظة صنعاء&#10;إدارة الحسابات&#10;قسم الرقابة والتفتيش"></textarea>
-            <small style="color:var(--muted);font-size:11.5px;margin-top:4px">اكتب كل سطر في سطر مستقل (السطر الأول سيكون بارزاً وبخط عريض).</small>
+            <textarea id="hRightLines" style="min-height:100px;font-weight:700;line-height:1.8" placeholder="الجمهورية اليمنية&#10;وزارة النقل&#10;الهيئة العامة لتنظيم شؤون النقل البري&#10;مكتب رئيس الهيئة"></textarea>
+            <small style="color:var(--muted);font-size:11.5px;margin-top:4px">اكتب كل سطر في سطر مستقل (السطر الأول "الجمهورية اليمنية" سيكون متوسطاً وبارزاً فوق باقي الأسطر).</small>
           </div>
 
           <div class="field">
@@ -340,8 +342,11 @@
       <button class="x-btn" id="mCloseBtn">✕</button>
     </div>
     <div class="modal-body" id="mDetailBody"></div>
-    <div class="modal-foot">
-      <button class="btn btn-primary" id="mPrintBtn">🖨 طباعة التقرير</button>
+    <div class="modal-foot" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <button class="btn btn-danger" id="mDeleteBtn" style="display:none">🗑️ حذف هذا التقرير</button>
+      <div style="display:flex;gap:8px;margin-right:auto">
+        <button class="btn btn-primary" id="mPrintBtn">🖨 طباعة التقرير</button>
+      </div>
     </div>
   </div>
 </div>

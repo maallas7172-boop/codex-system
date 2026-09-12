@@ -724,6 +724,21 @@ const server = http.createServer(async (req, res) => {
         .run(id, reportNumber, subject, String(r.target||''), String(r.logoId||'logo1'), String(r.reportDate||todayStr()), String(r.reportTime||''), String(r.location||''), String(r.details||''), JSON.stringify(images), me.fullName, me.id, null, t, t, t);
       send(res, 200, { id, reportNumber, consumed: false, message: `تمت المزامنة وحجز رقم التقرير الرسمي: (${reportNumber})` }); return;
     }
+    if (p === '/api/reports/batch-delete' && method === 'POST'){
+      if (!can(me, 'canDelete') && !can(me, 'canReportsDelete')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية حذف التقارير'); return; }
+      const b = await readBody(req);
+      const ids = Array.isArray(b.ids) ? b.ids : [];
+      if (!ids.length){ sendError(res, 400, 'لم يتم تحديد أي تقارير للحذف'); return; }
+      const stmt = db.prepare('DELETE FROM reports WHERE id=?');
+      let count = 0;
+      ids.forEach(id => {
+        const resDel = stmt.run(id);
+        if (resDel.changes) count++;
+      });
+      try { createAutoBackup(); } catch(e){}
+      send(res, 200, { ok: true, message: `تم حذف (${count}) تقرير بنجاح ✔`, deletedCount: count });
+      return;
+    }
     const rm = p.match(/^\/api\/reports\/([^/]+)$/);
     if (rm){
       const report = db.prepare('SELECT * FROM reports WHERE id=?').get(rm[1]);
@@ -747,9 +762,10 @@ const server = http.createServer(async (req, res) => {
         send(res, 200, { ok: true }); return;
       }
       if (method === 'DELETE'){
-        if (!can(me, 'canDelete')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية حذف'); return; }
+        if (!can(me, 'canDelete') && !can(me, 'canReportsDelete')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية حذف التقارير'); return; }
         db.prepare('DELETE FROM reports WHERE id=?').run(report.id);
-        send(res, 200, { ok: true }); return;
+        try { createAutoBackup(); } catch(e){}
+        send(res, 200, { ok: true, message: `تم حذف التقرير (${report.reportNumber}) بنجاح ✔` }); return;
       }
     }
     const rrm = p.match(/^\/api\/reports\/([^/]+)\/rating$/);

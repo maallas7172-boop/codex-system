@@ -148,12 +148,54 @@
   /* ================= التقارير ================= */
   let currentReports = [];
   const RATING_OPTS = ['مهم جدا', 'مهم', 'متوسط', 'عادي', 'غير مهم'];
+  const canDeleteReports = u.role === 'Admin' || !!u.canDelete || !!u.canReportsDelete;
+  const canPrintReports = u.role === 'Admin' || !!u.canPrint || !!u.canReportsPrint;
+
+  function updateBatchDeleteUI() {
+    const chks = Array.from(document.querySelectorAll('.report-select-chk:checked'));
+    const count = chks.length;
+    if ($('selectedReportsCount')) $('selectedReportsCount').textContent = count;
+    if ($('btnBatchDeleteReports')) {
+      $('btnBatchDeleteReports').style.display = (canDeleteReports && count > 0) ? 'inline-flex' : 'none';
+    }
+    if ($('selectAllReportsChk')) {
+      const allChks = document.querySelectorAll('.report-select-chk');
+      $('selectAllReportsChk').checked = (allChks.length > 0 && count === allChks.length);
+    }
+  }
+
+  // ربط زر الحذف الجماعي للتقارير
+  if ($('btnBatchDeleteReports') && !$('btnBatchDeleteReports')._bound) {
+    $('btnBatchDeleteReports')._bound = true;
+    $('btnBatchDeleteReports').onclick = async () => {
+      const selected = Array.from(document.querySelectorAll('.report-select-chk:checked')).map(c => c.dataset.id);
+      if (!selected.length) return;
+      if (!confirm(`⚠️ تحذير: هل أنت متأكد من حذف (${selected.length}) تقرير محدد نهائياً من قاعدة البيانات؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+      try {
+        const res = await api('/reports/batch-delete', {
+          method: 'POST',
+          body: JSON.stringify({ ids: selected })
+        });
+        toast(res.message || 'تم حذف التقارير المحددة بنجاح ✔');
+        renderReports();
+        if (typeof renderDash === 'function') renderDash();
+      } catch (err) { toast(err.message, 'err'); }
+    };
+  }
 
   async function renderReports() {
     const q = {};
-    const from = $('rFrom').value, to = $('rTo').value, u = $('rUser').value, rt = $('rRating').value;
+    const from = $('rFrom').value, to = $('rTo').value, uId = $('rUser').value, rt = $('rRating').value;
     if (from) q.from = from; if (to) q.to = to;
-    if (u) q.userId = u; if (rt) q.rating = rt;
+    if (uId) q.userId = uId; if (rt) q.rating = rt;
+
+    // إظهار أو إخفاء عمود التحديد بناءً على صلاحية الحذف
+    if ($('thSelectAllReports')) {
+      $('thSelectAllReports').style.display = canDeleteReports ? 'table-cell' : 'none';
+    }
+    if ($('selectAllReportsChk')) $('selectAllReportsChk').checked = false;
+    updateBatchDeleteUI();
+
     try {
       const d = await api('/reports?' + new URLSearchParams(q));
       currentReports = d.reports || [];
@@ -169,8 +211,16 @@
         );
       }
       $('repCount').textContent = 'عدد التقارير: ' + currentReports.length;
-      $('reportsTableBody').innerHTML = currentReports.length ? currentReports.map(r => `
-        <tr>
+      $('reportsTableBody').innerHTML = currentReports.length ? currentReports.map(r => {
+        const chkCell = canDeleteReports
+          ? `<td style="text-align:center"><input type="checkbox" class="report-select-chk" data-id="${r.id}" style="cursor:pointer;width:16px;height:16px" /></td>`
+          : '';
+        const delBtn = canDeleteReports
+          ? `<button class="btn btn-danger btn-xs" data-del="${r.id}" title="حذف هذا التقرير نهائياً">🗑️ حذف</button>`
+          : '';
+
+        return `<tr>
+          ${chkCell}
           <td><b>${esc(r.reportNumber)}</b></td>
           <td class="det" style="min-width:200px">${esc(r.subject)}</td>
           <td>${esc(r.target || '—')}</td>
@@ -186,11 +236,15 @@
             <div class="btn-row" style="gap:6px">
               <button class="btn btn-outline btn-xs" data-view="${r.id}">👁 عرض</button>
               <button class="btn btn-primary btn-xs" data-print="${r.id}">🖨 طباعة</button>
+              ${delBtn}
             </div>
           </td>
-        </tr>`).join('') : '<tr><td colspan="7" class="empty"><span class="ic">📄</span>لا توجد تقارير مطابقة للتصفية</td></tr>';
+        </tr>`;
+      }).join('') : `<tr><td colspan="${canDeleteReports ? 8 : 7}" class="empty"><span class="ic">📄</span>لا توجد تقارير مطابقة للتصفية</td></tr>`;
+
       bindRatingSelects();
       bindReportActions();
+      bindSelectionEvents();
     } catch (err) { toast(err.message, 'err'); }
   }
   if ($('rSearch')) $('rSearch').oninput = () => renderReports();
@@ -208,12 +262,39 @@
     });
   }
 
+  function bindSelectionEvents() {
+    document.querySelectorAll('.report-select-chk').forEach(chk => {
+      chk.onchange = updateBatchDeleteUI;
+    });
+    if ($('selectAllReportsChk') && !$('selectAllReportsChk')._bound) {
+      $('selectAllReportsChk')._bound = true;
+      $('selectAllReportsChk').onchange = function() {
+        const isChecked = this.checked;
+        document.querySelectorAll('.report-select-chk').forEach(c => c.checked = isChecked);
+        updateBatchDeleteUI();
+      };
+    }
+  }
+
   function bindReportActions() {
     document.querySelectorAll('[data-view]').forEach(b => {
       b.onclick = () => showReportDetail(currentReports.find(r => r.id === b.dataset.view));
     });
     document.querySelectorAll('[data-print]').forEach(b => {
       b.onclick = () => printReport(currentReports.find(r => r.id === b.dataset.print));
+    });
+    document.querySelectorAll('[data-del]').forEach(b => {
+      b.onclick = async () => {
+        const r = currentReports.find(x => x.id === b.dataset.del);
+        if (!r) return;
+        if (!confirm(`هل أنت متأكد من حذف التقرير رقم «${r.reportNumber}» (${r.subject}) نهائياً من النظام؟`)) return;
+        try {
+          const res = await api('/reports/' + r.id, { method: 'DELETE' });
+          toast(res.message || 'تم حذف التقرير بنجاح ✔');
+          renderReports();
+          if (typeof renderDash === 'function') renderDash();
+        } catch (err) { toast(err.message, 'err'); }
+      };
     });
   }
 
@@ -308,6 +389,19 @@
       </div>
     `;
     $('modal').classList.add('show');
+    if ($('mDeleteBtn')) {
+      $('mDeleteBtn').style.display = canDeleteReports ? 'inline-block' : 'none';
+      $('mDeleteBtn').onclick = async () => {
+        if (!confirm(`هل أنت متأكد من حذف التقرير رقم «${r.reportNumber}» (${r.subject}) نهائياً من النظام؟`)) return;
+        try {
+          const res = await api('/reports/' + r.id, { method: 'DELETE' });
+          toast(res.message || 'تم حذف التقرير بنجاح ✔');
+          $('modal').classList.remove('show');
+          renderReports();
+          if (typeof renderDash === 'function') renderDash();
+        } catch (err) { toast(err.message, 'err'); }
+      };
+    }
     $('mPrintBtn').onclick = () => { $('modal').classList.remove('show'); printReport(r); };
     $('mCloseBtn').onclick = () => $('modal').classList.remove('show');
   }
