@@ -190,17 +190,32 @@
 
       <!-- إدارة الأجهزة والهواتف المعتمدة -->
       <div class="card" style="margin-top:24px">
-        <div class="page-head" style="margin-bottom:12px">
+        <div class="page-head" style="margin-bottom:14px">
           <div>
             <h3 style="display:flex;align-items:center;gap:8px">
               <span>📱 الهواتف والأجهزة الميدانية المعتمدة</span>
               <span class="badge warn" id="pendingDevicesBadge" style="display:none">0 بانتظار الاعتماد</span>
             </h3>
             <p style="font-size:12.5px;color:var(--muted);margin:0">
-              للأمان والحماية: لا يستطيع أي هاتف الاتصال بالنظام أو رفع تقارير إلا بعد اعتماده وتفعيله من المدير هنا.
+              للأمان والحماية: بمجرد اعتماد الهاتف من قِبل المدير يحفظ بشكل دائم ومستمر في النظام، ولا يتوقف إلا إذا قمت بالنقر على "حظر".
             </p>
           </div>
-          <button class="btn btn-outline btn-sm" type="button" onclick="renderDevices()">🔄 تحديث قائمة الأجهزة</button>
+          <div class="btn-row" style="gap:8px">
+            <button class="btn btn-primary btn-sm" id="approveAllDevicesBtn" type="button">✅ اعتماد كافة المعلقة</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="renderDevices()">🔄 تحديث القائمة</button>
+          </div>
+        </div>
+
+        <!-- شريط التحكم بنظام أمان الأجهزة -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;background:#f8fafc;padding:12px 16px;border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13.5px;margin:0">
+              <input type="checkbox" id="enforceDeviceAuthToggle" style="width:18px;height:18px;cursor:pointer" checked />
+              <span>🔒 تفعيل نظام اعتماد الأجهزة (إلزامية موافقة المدير للأجهزة الجديدة)</span>
+            </label>
+            <span id="deviceAuthStatusBadge" class="badge green">مفعّل (حماية عالية)</span>
+          </div>
+          <span style="font-size:12px;color:var(--muted)">💡 عند إيقاف هذا الخيار، يتمكن الموظف من الدخول ورفع التقارير فوراً باسم المستخدم وكلمة المرور دون انتظار الاعتماد.</span>
         </div>
         <div class="table-wrap">
           <table>

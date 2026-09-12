@@ -66,7 +66,8 @@ function createAutoBackup(){
   const users = db.prepare('SELECT * FROM users').all();
   const reports = db.prepare('SELECT * FROM reports').all();
   const settings = db.prepare('SELECT * FROM settings').all();
-  const dump = { version: '2026-v2', exportedAt: nowIso(), users, reports, settings };
+  const devices = db.prepare('SELECT * FROM devices').all();
+  const dump = { version: '2026-v2', exportedAt: nowIso(), users, reports, settings, devices };
   const jsonContent = JSON.stringify(dump, null, 2);
   const locations = [];
 
@@ -144,7 +145,6 @@ function parseReportRow(r){
 function checkDeviceAuth(user, req) {
   if (!user || user.role === 'Admin') return { ok: true };
   const enforce = getSetting('enforceDeviceAuth', '1') === '1';
-  if (!enforce) return { ok: true };
 
   const deviceId = (req.headers['x-device-id'] || '').trim();
   let deviceName = '';
@@ -152,6 +152,7 @@ function checkDeviceAuth(user, req) {
   if (!deviceName) deviceName = 'هاتف (' + (req.headers['user-agent'] || 'ميداني').slice(0, 35) + ')';
 
   if (!deviceId) {
+    if (!enforce) return { ok: true };
     return { ok: false, code: 'DEVICE_MISSING', message: 'لم يتم إرسال معرّف الجهاز (Device ID). يرجى فتح التطبيق الرسمي.' };
   }
 
@@ -159,9 +160,15 @@ function checkDeviceAuth(user, req) {
   if (!dev) {
     const id = uid();
     const t = nowIso();
-    db.prepare('INSERT INTO devices(id, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt) VALUES(?,?,?,?,?,?,?,?,?)')
-      .run(id, deviceId, deviceName, user.id, user.userName, user.fullName, 'pending', t, t);
-    return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير النظام. يرجى إبلاغ المدير لتفعيل هاتفك من لوحة التحكم.' };
+    const initialStatus = enforce ? 'pending' : 'approved';
+    const approvedAt = enforce ? null : t;
+    const approvedBy = enforce ? null : 'تلقائي (النظام متاح)';
+    db.prepare('INSERT INTO devices(id, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, lastSeenAt, approvedAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, deviceId, deviceName, user.id, user.userName, user.fullName, initialStatus, t, t, approvedAt, approvedBy);
+    if (enforce) {
+      return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف جديد وقيد المراجعة بانتظار اعتماد مدير النظام. يرجى إبلاغ المدير لتفعيل هاتفك من لوحة التحكم.' };
+    }
+    return { ok: true };
   }
 
   // تحديث وقت آخر ظهور والبيانات
@@ -172,7 +179,7 @@ function checkDeviceAuth(user, req) {
     return { ok: false, code: 'DEVICE_BLOCKED', message: '🚫 تم حظر هذا الهاتف من الاتصال بالنظام من قِبل مدير النظام.' };
   }
 
-  if (dev.status === 'pending') {
+  if (enforce && dev.status === 'pending') {
     return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير النظام. يرجى إبلاغ المدير لتفعيل هاتفك من لوحة التحكم.' };
   }
 
@@ -191,6 +198,7 @@ function buildMe(user){
     users: entryUsers,
     settings: {
       consumeAddAfterSync: getSetting('consumeAddAfterSync', '0') === '1',
+      enforceDeviceAuth: getSetting('enforceDeviceAuth', '1') === '1',
       reportHeaderConfig: headerConfig,
       lanIP: lanIP(),
       port: PORT,
@@ -486,12 +494,12 @@ const server = http.createServer(async (req, res) => {
           id,userName,fullName,passwordHash,role,isActive,
           canOpen,canAdd,canDelete,canEdit,canPrint,
           canDash,canEntry,canReports,canReportsEdit,canReportsDelete,canReportsPrint,
-          canEvals,canEvalsAdd,canEvalsDelete,canUsers,canSettings,createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          canUsers,canSettings,createdAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(id, userName, fullName, b.passwordHash, 'EntryUser', b.isActive?1:0,
-            b.canOpen?1:0, b.canAdd?1:0, b.canDelete?1:0, b.canEdit?1:0, b.canPrint?1:0,
-            b.canDash?1:0, b.canEntry?1:0, b.canReports?1:0, b.canReportsEdit?1:0, b.canReportsDelete?1:0, b.canReportsPrint?1:0,
-            b.canEvals?1:0, b.canEvalsAdd?1:0, b.canEvalsDelete?1:0, b.canUsers?1:0, b.canSettings?1:0, nowIso());
+            b.canOpen?1:0, b.canAdd?1:0, (b.canDelete || b.canReportsDelete)?1:0, (b.canEdit || b.canReportsEdit)?1:0, (b.canPrint || b.canReportsPrint)?1:0,
+            b.canDash?1:0, b.canEntry?1:0, b.canReports?1:0, (b.canReportsEdit || b.canEdit)?1:0, (b.canReportsDelete || b.canDelete)?1:0, (b.canReportsPrint || b.canPrint)?1:0,
+            b.canUsers?1:0, b.canSettings?1:0, nowIso());
         send(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) }); return;
       }
     }
@@ -505,27 +513,29 @@ const server = http.createServer(async (req, res) => {
         if (user.role === 'Admin' && Object.prototype.hasOwnProperty.call(b, 'isActive') && (!b.isActive || b.isActive === 0) && db.prepare("SELECT COUNT(*) c FROM users WHERE role='Admin' AND isActive=1").get().c <= 1){
           sendError(res, 400, 'لا يمكن تعطيل المدير الوحيد'); return;
         }
+
+        const canEditVal = Object.prototype.hasOwnProperty.call(b, 'canEdit') ? (b.canEdit ? 1 : 0) : (Object.prototype.hasOwnProperty.call(b, 'canReportsEdit') ? (b.canReportsEdit ? 1 : 0) : (user.canEdit ?? 0));
+        const canDeleteVal = Object.prototype.hasOwnProperty.call(b, 'canDelete') ? (b.canDelete ? 1 : 0) : (Object.prototype.hasOwnProperty.call(b, 'canReportsDelete') ? (b.canReportsDelete ? 1 : 0) : (user.canDelete ?? 0));
+        const canPrintVal = Object.prototype.hasOwnProperty.call(b, 'canPrint') ? (b.canPrint ? 1 : 0) : (Object.prototype.hasOwnProperty.call(b, 'canReportsPrint') ? (b.canReportsPrint ? 1 : 0) : (user.canPrint ?? 0));
+
         db.prepare(`UPDATE users SET
           fullName=?, isActive=?, canOpen=?, canAdd=?, canDelete=?, canEdit=?, canPrint=?,
           canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?,
-          canEvals=?, canEvalsAdd=?, canEvalsDelete=?, canUsers=?, canSettings=?
+          canUsers=?, canSettings=?
           WHERE id=?`)
           .run(String(b.fullName ?? user.fullName),
             Object.prototype.hasOwnProperty.call(b, 'isActive') ? (b.isActive ? 1 : 0) : user.isActive,
             Object.prototype.hasOwnProperty.call(b, 'canOpen') ? (b.canOpen ? 1 : 0) : user.canOpen,
             Object.prototype.hasOwnProperty.call(b, 'canAdd') ? (b.canAdd ? 1 : 0) : user.canAdd,
-            Object.prototype.hasOwnProperty.call(b, 'canDelete') ? (b.canDelete ? 1 : 0) : user.canDelete,
-            Object.prototype.hasOwnProperty.call(b, 'canEdit') ? (b.canEdit ? 1 : 0) : user.canEdit,
-            Object.prototype.hasOwnProperty.call(b, 'canPrint') ? (b.canPrint ? 1 : 0) : user.canPrint,
+            canDeleteVal,
+            canEditVal,
+            canPrintVal,
             Object.prototype.hasOwnProperty.call(b, 'canDash') ? (b.canDash ? 1 : 0) : (user.canDash ?? 0),
             Object.prototype.hasOwnProperty.call(b, 'canEntry') ? (b.canEntry ? 1 : 0) : (user.canEntry ?? 0),
             Object.prototype.hasOwnProperty.call(b, 'canReports') ? (b.canReports ? 1 : 0) : (user.canReports ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canReportsEdit') ? (b.canReportsEdit ? 1 : 0) : (user.canReportsEdit ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canReportsDelete') ? (b.canReportsDelete ? 1 : 0) : (user.canReportsDelete ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canReportsPrint') ? (b.canReportsPrint ? 1 : 0) : (user.canReportsPrint ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canEvals') ? (b.canEvals ? 1 : 0) : (user.canEvals ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canEvalsAdd') ? (b.canEvalsAdd ? 1 : 0) : (user.canEvalsAdd ?? 0),
-            Object.prototype.hasOwnProperty.call(b, 'canEvalsDelete') ? (b.canEvalsDelete ? 1 : 0) : (user.canEvalsDelete ?? 0),
+            canEditVal,
+            canDeleteVal,
+            canPrintVal,
             Object.prototype.hasOwnProperty.call(b, 'canUsers') ? (b.canUsers ? 1 : 0) : (user.canUsers ?? 0),
             Object.prototype.hasOwnProperty.call(b, 'canSettings') ? (b.canSettings ? 1 : 0) : (user.canSettings ?? 0),
             user.id);
@@ -549,6 +559,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- إدارة الأجهزة والهواتف المعتمدة ---- */
+    if (p === '/api/devices/approve-all' && method === 'POST'){
+      if (!isAdmin(me) && !can(me, 'canUsers')){ sendError(res, 403, 'غير مصرح'); return; }
+      const t = nowIso();
+      const info = db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE status='pending'").run(t, me.fullName);
+      send(res, 200, { ok: true, message: `تم اعتماد وتفعيل كافة الأجهزة المعلقة بنجاح (${info.changes} جهاز) ✔` });
+      return;
+    }
     if (p === '/api/devices'){
       if (!isAdmin(me) && !can(me, 'canUsers')){ sendError(res, 403, 'غير مصرح'); return; }
       if (method === 'GET'){
@@ -763,7 +780,8 @@ const server = http.createServer(async (req, res) => {
         exportedAt: nowIso(), version: '2.0',
         users: db.prepare('SELECT * FROM users').all(),
         reports: db.prepare('SELECT * FROM reports').all().map(parseReportRow),
-        settings: db.prepare('SELECT * FROM settings').all()
+        settings: db.prepare('SELECT * FROM settings').all(),
+        devices: db.prepare('SELECT * FROM devices').all()
       };
       send(res, 200, dump); return;
     }
@@ -780,6 +798,11 @@ const server = http.createServer(async (req, res) => {
       const insR = db.prepare('INSERT INTO reports(id,reportNumber,subject,target,reportDate,reportTime,location,details,images,enteredBy,enteredByUserId,rating,createdAt,updatedAt,syncedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
       d.reports.forEach(r => insR.run(r.id, r.reportNumber, r.subject, r.target, r.reportDate, r.reportTime, r.location, r.details, JSON.stringify(r.images||[]), r.enteredBy, r.enteredByUserId, r.rating, r.createdAt, r.updatedAt, r.syncedAt));
       (d.settings || []).forEach(s => setSetting(s.key, s.value));
+      if (Array.isArray(d.devices) && d.devices.length > 0) {
+        db.exec('DELETE FROM devices;');
+        const insD = db.prepare('INSERT OR REPLACE INTO devices(id, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, approvedAt, lastSeenAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+        d.devices.forEach(dev => insD.run(dev.id, dev.deviceId, dev.deviceName, dev.userId, dev.userName, dev.userFullName, dev.status, dev.registeredAt, dev.approvedAt, dev.lastSeenAt, dev.approvedBy));
+      }
       const adminCount = db.prepare("SELECT COUNT(*) c FROM users WHERE role='Admin'").get().c;
       if (adminCount === 0){
         db.prepare('INSERT INTO users(id,userName,fullName,passwordHash,role,isActive,canOpen,canAdd,canDelete,canEdit,canPrint,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -797,6 +820,7 @@ const server = http.createServer(async (req, res) => {
       if (method === 'PUT'){
         const b = await readBody(req);
         if (b.consumeAddAfterSync != null) setSetting('consumeAddAfterSync', b.consumeAddAfterSync ? '1' : '0');
+        if (b.enforceDeviceAuth != null) setSetting('enforceDeviceAuth', b.enforceDeviceAuth ? '1' : '0');
         if (b.reportHeaderConfig != null) {
           const val = typeof b.reportHeaderConfig === 'object' ? JSON.stringify(b.reportHeaderConfig) : String(b.reportHeaderConfig);
           setSetting('reportHeaderConfig', val);

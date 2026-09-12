@@ -78,33 +78,91 @@ async function currentMe() {
   }
 }
 
-/* ---------- معرّف الجهاز وبصمة الهاتف الميداني ---------- */
-function getDeviceId() {
-  let id = localStorage.getItem(DEVICE_ID_KEY);
-  if (!id) {
-    id = 'DEV-' + Math.random().toString(36).substring(2, 8).toUpperCase() + '-' + Date.now().toString(36).toUpperCase();
-    localStorage.setItem(DEVICE_ID_KEY, id);
+/* ---------- معرّف الجهاز وبصمة الهاتف الميداني الدائمة ---------- */
+function getHardwareFingerprint() {
+  try {
+    const nav = window.navigator || {};
+    const scr = window.screen || {};
+    const plugins = (nav.plugins ? Array.from(nav.plugins).map(p => p.name).join(';') : '');
+    const str = [
+      nav.userAgent || '',
+      nav.platform || '',
+      nav.language || nav.userLanguage || '',
+      scr.width || 0,
+      scr.height || 0,
+      scr.colorDepth || 0,
+      new Date().getTimezoneOffset(),
+      nav.hardwareConcurrency || 4,
+      plugins
+    ].join('###');
+
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+      hash = hash & hash;
+    }
+    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+    return 'DEV-FP-' + hex;
+  } catch(e) {
+    return 'DEV-FP-DEVICE';
   }
+}
+
+function getCookie(name) {
+  try {
+    const matches = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
+    return matches ? decodeURIComponent(matches[1]) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+function setCookie(name, val) {
+  try {
+    document.cookie = name + '=' + encodeURIComponent(val) + '; max-age=315360000; path=/; SameSite=Lax';
+  } catch(e) {}
+}
+
+function getDeviceId() {
+  let id = null;
+  try { id = localStorage.getItem(DEVICE_ID_KEY); } catch(e){}
+  if (!id) {
+    id = getCookie(DEVICE_ID_KEY);
+  }
+  if (!id) {
+    id = getHardwareFingerprint();
+  }
+  try { localStorage.setItem(DEVICE_ID_KEY, id); } catch(e){}
+  setCookie(DEVICE_ID_KEY, id);
   return id;
 }
 
 function getDeviceName() {
-  let name = localStorage.getItem(DEVICE_NAME_KEY);
+  let name = null;
+  try { name = localStorage.getItem(DEVICE_NAME_KEY) || getCookie(DEVICE_NAME_KEY); } catch(e){}
   if (!name) {
     const ua = navigator.userAgent || '';
     let detected = 'هاتف ميداني';
     if (/Android/i.test(ua)) {
-      const match = ua.match(/Android\s+([\d.]+)/);
-      detected = 'هاتف أندرويد' + (match ? ' (v' + match[1] + ')' : '');
-    } else if (/iPhone|iPad/i.test(ua)) {
-      detected = 'هاتف آيفون / آيباد';
+      const model = ua.match(/;\s*([^;]+)\s+Build\//);
+      if (model && model[1]) {
+        detected = model[1].trim() + ' (Android)';
+      } else {
+        const vMatch = ua.match(/Android\s+([\d.]+)/);
+        detected = 'هاتف أندرويد' + (vMatch ? ' (v' + vMatch[1] + ')' : '');
+      }
+    } else if (/iPhone/i.test(ua)) {
+      detected = 'هاتف آيفون (iPhone)';
+    } else if (/iPad/i.test(ua)) {
+      detected = 'جهاز آيباد (iPad)';
     } else if (/Windows/i.test(ua)) {
       detected = 'كمبيوتر ويندوز';
     } else {
       detected = 'جهاز ' + (navigator.platform || 'ميداني');
     }
     name = detected;
-    localStorage.setItem(DEVICE_NAME_KEY, name);
+    try { localStorage.setItem(DEVICE_NAME_KEY, name); } catch(e){}
+    setCookie(DEVICE_NAME_KEY, name);
   }
   return name;
 }

@@ -767,8 +767,55 @@
   $('userSearch').oninput = renderUsers;
 
   /* ================= إدارة الأجهزة والهواتف المعتمدة ================= */
+  function updateDeviceAuthBadge(isActive) {
+    const badge = $('deviceAuthStatusBadge');
+    if (!badge) return;
+    if (isActive) {
+      badge.className = 'badge green';
+      badge.textContent = 'مفعّل (حماية عالية)';
+    } else {
+      badge.className = 'badge warn';
+      badge.textContent = 'معطّل (سماح مباشر للجميع)';
+    }
+  }
+
   async function renderDevices() {
     if (!$('devicesTableBody')) return;
+
+    // تهيئة زر ومفتاح الحماية
+    const toggle = $('enforceDeviceAuthToggle');
+    if (toggle) {
+      if (!toggle._bound) {
+        toggle._bound = true;
+        toggle.onchange = async () => {
+          try {
+            await api('/settings', { method: 'PUT', body: JSON.stringify({ enforceDeviceAuth: toggle.checked }) });
+            toast(toggle.checked ? 'تم تفعيل نظام حماية واعتماد الأجهزة ✔' : 'تم إيقاف فحص الأجهزة (السماح بالدخول المباشر) 🔓');
+            updateDeviceAuthBadge(toggle.checked);
+            if (me.settings) me.settings.enforceDeviceAuth = toggle.checked;
+          } catch (err) {
+            toast(err.message, 'err');
+            toggle.checked = !toggle.checked;
+          }
+        };
+      }
+      toggle.checked = me.settings?.enforceDeviceAuth !== false;
+      updateDeviceAuthBadge(toggle.checked);
+    }
+
+    const appAllBtn = $('approveAllDevicesBtn');
+    if (appAllBtn && !appAllBtn._bound) {
+      appAllBtn._bound = true;
+      appAllBtn.onclick = async () => {
+        try {
+          const res = await api('/devices/approve-all', { method: 'POST' });
+          toast(res.message || 'تم اعتماد وتفعيل كافة الأجهزة المعلقة بنجاح ✔');
+          renderDevices();
+          if (typeof renderStats === 'function') renderStats();
+        } catch (err) { toast(err.message, 'err'); }
+      };
+    }
+
     try {
       const d = await api('/devices');
       const list = d.devices || [];
@@ -781,14 +828,14 @@
       $('devicesTableBody').innerHTML = list.length ? list.map(dev => {
         let statusBadge = '';
         if (dev.status === 'approved') {
-          statusBadge = '<span class="badge green">🟢 معتمد ومصرح</span>';
+          statusBadge = '<span class="badge green">🟢 معتمد دائم ومصرح</span>';
         } else if (dev.status === 'blocked') {
-          statusBadge = '<span class="badge red">🔴 محظور</span>';
+          statusBadge = '<span class="badge red">🔴 محظور وموقوف</span>';
         } else {
-          statusBadge = '<span class="badge warn">⏳ بانتظار الاعتماد</span>';
+          statusBadge = '<span class="badge warn">⏳ بانتظار اعتماد المدير</span>';
         }
 
-        const shortId = (dev.deviceId || '').slice(0, 14);
+        const shortId = (dev.deviceId || '').slice(0, 16);
 
         return `<tr>
           <td>
@@ -806,8 +853,8 @@
           <td>${statusBadge}</td>
           <td>
             <div class="btn-row" style="gap:6px">
-              ${dev.status !== 'approved' ? `<button class="btn btn-primary btn-xs" data-approve="${dev.id}">✅ اعتماد وتفعيل</button>` : ''}
-              ${dev.status !== 'blocked' ? `<button class="btn btn-warn btn-xs" data-block="${dev.id}">🚫 حظر</button>` : ''}
+              ${dev.status !== 'approved' ? `<button class="btn btn-primary btn-xs" data-approve="${dev.id}">✅ اعتماد دائم</button>` : ''}
+              ${dev.status !== 'blocked' ? `<button class="btn btn-warn btn-xs" data-block="${dev.id}">🚫 حظر / توقيف</button>` : ''}
               <button class="btn btn-danger btn-xs" data-deldev="${dev.id}">🗑️ حذف</button>
             </div>
           </td>
@@ -818,8 +865,9 @@
         b.onclick = async () => {
           try {
             const res = await api('/devices/' + b.dataset.approve + '/approve', { method: 'POST' });
-            toast(res.message || 'تم اعتماد الهاتف وتفعيله بنجاح ✔');
+            toast(res.message || 'تم اعتماد الهاتف وتفعيله بشكل دائم ✔');
             renderDevices();
+            if (typeof renderStats === 'function') renderStats();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
@@ -828,8 +876,9 @@
         b.onclick = async () => {
           try {
             const res = await api('/devices/' + b.dataset.block + '/block', { method: 'POST' });
-            toast(res.message || 'تم حظر الهاتف 🚫', 'err');
+            toast(res.message || 'تم حظر وتوقيف الهاتف 🚫', 'err');
             renderDevices();
+            if (typeof renderStats === 'function') renderStats();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
@@ -841,6 +890,7 @@
             await api('/devices/' + b.dataset.deldev, { method: 'DELETE' });
             toast('تم حذف الجهاز من السجل');
             renderDevices();
+            if (typeof renderStats === 'function') renderStats();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
@@ -1062,7 +1112,6 @@
   /* ================= التشغيل الأولي ================= */
   window.renderDash = renderDash;
   window.renderReports = renderReports;
-  window.renderEvals = renderEvals;
   window.renderUsers = renderUsers;
   window.renderSettings = renderSettings;
   loadUserSelects();
