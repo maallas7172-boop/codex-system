@@ -18,10 +18,12 @@
       <div class="t">إدارة الحسابات<small>واجهة إدخال البيانات</small></div>
     </div>
     <nav class="nav">
-      <button class="nav-btn active"><span class="ic">📝</span> إدخال تقرير</button>
+      <button class="nav-btn active" id="eNavEntry" type="button"><span class="ic">📝</span> إدخال تقرير</button>
+      <button class="nav-btn" id="eNavMyTasks" type="button"><span class="ic">📋</span> مهامي وتكليفاتي <span class="badge warn" id="myTasksBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
       <div id="adminNav" style="display:none">
         <button class="nav-btn" id="eNavDash" type="button" onclick="location.href='admin.html'"><span class="ic">📊</span> لوحة التحكم</button>
         <button class="nav-btn" id="eNavReports" type="button" onclick="location.href='admin.html#reports'"><span class="ic">📄</span> التقارير</button>
+        <button class="nav-btn" id="eNavEvents" type="button" onclick="location.href='admin.html#events'"><span class="ic">📋</span> إدارة المهام</button>
         <button class="nav-btn" id="eNavUsers" type="button" onclick="location.href='admin.html#users'"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
         <button class="nav-btn" id="eNavSettings" type="button" onclick="location.href='admin.html#settings'"><span class="ic">⚙️</span> الإعدادات</button>
       </div>
@@ -39,7 +41,7 @@
 
   <main class="main" id="entryRoot" style="display:none">
     <!-- شريط حالة الاتصال بالخادم والمزامنة التلقائية -->
-    <div id="syncStatusBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-radius:var(--r-md);margin-bottom:16px;font-size:13px;font-weight:700;background:var(--surface-soft);border:1px solid var(--line-strong);flex-wrap:wrap">
+    <div id="syncStatusBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-radius:var(--r-md);margin-bottom:12px;font-size:13px;font-weight:700;background:var(--surface-soft);border:1px solid var(--line-strong);flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:8px">
         <span id="syncDotStatus" style="font-size:16px">⏳</span>
         <span id="syncStatusText">جارٍ فحص الاتصال بالخادم المركزي...</span>
@@ -49,7 +51,37 @@
       </div>
     </div>
 
-    <div class="page-head">
+    <!-- شريط المهام والتكليفات الموجهة للموظف -->
+    <div id="myTasksAlertBanner" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-radius:var(--r-md);margin-bottom:16px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">📋</span>
+        <div>
+          <div style="font-weight:900;color:#1e3a8a;font-size:14px">
+            المهام والتكليفات الموجهة لك من قِبل المدير
+            <span class="badge warn" id="myTasksAlertCount" style="margin-right:6px">0 جديدة</span>
+          </div>
+          <div style="font-size:12px;color:#3b82f6;margin-top:2px">تظهر هنا فقط التكليفات والفعاليات المسندة لحسابك. يرجى تأكيد استلامها.</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnToggleTasksView" type="button" style="font-size:12.5px;padding:7px 16px">📋 عرض مهامي والتغذية الراجعة</button>
+    </div>
+
+    <!-- قسم مهام وتكليفات الموظف -->
+    <section class="card" id="myTasksBox" style="display:none;margin-bottom:18px">
+      <div class="page-head" style="margin-bottom:14px">
+        <div>
+          <h3>📋 مهامك وتكليفاتك المسندة إليك</h3>
+          <p style="margin:0;font-size:13px;color:var(--muted)">تظهر هذه المهام لك حصرياً على هاتفك، مع إمكانية تأكيد الاستلام الفوري، تقديم التغذية الراجعة، أو حذف المهمة من تطبيقك.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-outline btn-sm" id="btnRefreshMyTasks" type="button">🔄 تحديث المهام</button>
+          <button class="btn btn-secondary btn-sm" id="btnBackToReportsFromTasks" type="button">📝 إدخال التقارير</button>
+        </div>
+      </div>
+      <div id="myTasksList" style="display:flex;flex-direction:column;gap:14px"></div>
+    </section>
+
+    <div class="page-head" id="entryReportsHead">
       <div>
         <h2>إدخال تقرير ميداني</h2>
         <p>املأ بيانات التقرير — يمكنك الحفظ كمسودة على هذا الجهاز ثم الترحيل إلى قاعدة بيانات المدير عند الجاهزية.</p>
@@ -141,6 +173,33 @@
     <h2 id="lockTitle">لا توجد صلاحية إدخال</h2>
     <p class="sub" id="lockDesc" style="margin-bottom:20px"></p>
     <button class="btn btn-outline" onclick="logout()">تسجيل الخروج</button>
+  </div>
+</div>
+
+<!-- نافذة التغذية الراجعة وإنجاز المهمة للموظف -->
+<div class="modal-back" id="taskFeedbackModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <h3 id="tfModalTitle">💬 التغذية الراجعة للمدير</h3>
+      <button class="x-btn" id="tfCloseBtn">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <div id="tfTaskSummary" style="background:#f8fafc;padding:12px;border-radius:8px;border:1px solid var(--border);margin-bottom:14px;font-size:13px"></div>
+      <div class="field full">
+        <span>ملاحظات التغذية الراجعة أو تقرير التنفيذ للمدير</span>
+        <textarea id="tfNotes" style="min-height:110px" placeholder="اكتب هنا أي تفاصيل أو تقرير عن سير التنفيذ أو أسباب التأخير أو النتيجة للمدير..."></textarea>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700">
+          <input type="checkbox" id="tfMarkCompleted" checked style="width:18px;height:18px" />
+          <span>✅ تم إنجاز المهمة بالكامل (إغلاق المهمة كمكتملة)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-outline" id="tfCancelBtn">إلغاء</button>
+      <button class="btn btn-primary" id="tfSubmitBtn">🚀 إرسال التغذية الراجعة للمدير</button>
+    </div>
   </div>
 </div>
 

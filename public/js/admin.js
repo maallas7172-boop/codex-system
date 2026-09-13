@@ -21,22 +21,26 @@
   // إظهار أو إخفاء أزرار التبويب حسب الصلاحيات الممنوحة من المدير
   const navDash = document.querySelector('.nav-btn[data-page="dash"]');
   const navReports = document.querySelector('.nav-btn[data-page="reports"]');
+  const navEvents = document.querySelector('.nav-btn[data-page="events"]');
   const navUsers = document.querySelector('.nav-btn[data-page="users"]');
   const navSettings = document.querySelector('.nav-btn[data-page="settings"]');
 
   if (navDash) navDash.style.display = (u.role === 'Admin' || u.canDash) ? 'flex' : 'none';
   if (navReports) navReports.style.display = (u.role === 'Admin' || u.canReports) ? 'flex' : 'none';
+  if (navEvents) navEvents.style.display = (u.role === 'Admin' || u.canEvents) ? 'flex' : 'none';
   if (navUsers) navUsers.style.display = (u.role === 'Admin' || u.canUsers) ? 'flex' : 'none';
   if (navSettings) navSettings.style.display = (u.role === 'Admin' || u.canSettings) ? 'flex' : 'none';
 
   /* ---------- التنقل ---------- */
   const NAVS = {
     dash: 'dashPage', reports: 'reportsPage',
+    events: 'eventsPage',
     users: 'usersPage', settings: 'settingsPage'
   };
   const PERMS = {
     dash: u.role === 'Admin' || u.canDash,
     reports: u.role === 'Admin' || u.canReports,
+    events: u.role === 'Admin' || u.canEvents,
     users: u.role === 'Admin' || u.canUsers,
     settings: u.role === 'Admin' || u.canSettings
   };
@@ -54,6 +58,7 @@
       if ($(NAVS[pageKey])) $(NAVS[pageKey]).classList.add('active');
       if (pageKey === 'dash') renderDash();
       if (pageKey === 'reports') renderReports();
+      if (pageKey === 'events') renderEvents();
       if (pageKey === 'users') renderUsers();
       if (pageKey === 'settings') renderSettings();
     };
@@ -794,14 +799,311 @@
     };
   }
 
-  /* تعبئة قوائم اختيار المستخدمين (لتصفية التقارير) */
+  /* تعبئة قوائم اختيار المستخدمين (لتصفية التقارير والمهام) */
   async function loadUserSelects() {
     try {
       const d = await api('/users');
-      const entryUsers = d.users.filter(u => u.role === 'EntryUser');
-      const opts = entryUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
+      const allUsers = d.users || [];
+      const activeUsers = allUsers.filter(u => u.isActive);
+      const opts = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName)} (${esc(u.userName)})</option>`).join('');
       if ($('rUser')) $('rUser').innerHTML = '<option value="">كل المستخدمين</option>' + opts;
+      if ($('efAssignedUser')) $('efAssignedUser').innerHTML = '<option value="">-- اختر الموظف المكلف --</option>' + opts;
+      if ($('evFilterUser')) $('evFilterUser').innerHTML = '<option value="">كل الموظفين</option>' + opts;
     } catch (err) { toast(err.message, 'err'); }
+  }
+
+  /* ================= المهام والأحداث (Events & Tasks) ================= */
+  let currentEvents = [];
+
+  function getEventTypeBadge(type) {
+    const map = {
+      'ورشة عمل': 'badge blue',
+      'اجتماع إداري': 'badge warn',
+      'نزول ميداني': 'badge green',
+      'مهمة تفتيشية': 'badge red',
+      'مؤتمر / ندوة': 'badge purple',
+      'حملة توعوية': 'badge teal',
+      'متابعة وإنجاز': 'badge gold',
+      'مهمة خاصة': 'badge dark',
+      'أخرى': 'badge gray'
+    };
+    const c = map[type] || 'badge blue';
+    return `<span class="${c}">📌 ${esc(type || 'مهمة')}</span>`;
+  }
+
+  function getEventStatusBadge(e) {
+    if (e.status === 'completed') {
+      return `<span class="badge green">✅ تم الإنجاز ${e.completedAt ? '<small style="display:block;font-size:10px">(' + fmtDate(e.completedAt) + ')</small>' : ''}</span>`;
+    }
+    if (e.status === 'received' || e.status === 'in_progress') {
+      return `<span class="badge blue">📬 استلمها الموظف ${e.receivedAt ? '<small style="display:block;font-size:10px">(' + fmtDateTime(e.receivedAt) + ')</small>' : ''}</span>`;
+    }
+    return `<span class="badge warn">⏳ بانتظار استلام الموظف</span>`;
+  }
+
+  async function renderEvents() {
+    await loadUserSelects();
+    const params = new URLSearchParams();
+    if ($('evSearch') && $('evSearch').value.trim()) params.set('q', $('evSearch').value.trim());
+    if ($('evFilterUser') && $('evFilterUser').value) params.set('assignedUserId', $('evFilterUser').value);
+    if ($('evFilterType') && $('evFilterType').value) params.set('eventType', $('evFilterType').value);
+    if ($('evFilterStatus') && $('evFilterStatus').value) params.set('status', $('evFilterStatus').value);
+    if ($('evFilterArchive') && $('evFilterArchive').value !== '') params.set('isArchived', $('evFilterArchive').value);
+    if ($('evFilterFrom') && $('evFilterFrom').value) params.set('from', $('evFilterFrom').value);
+    if ($('evFilterTo') && $('evFilterTo').value) params.set('to', $('evFilterTo').value);
+
+    try {
+      const res = await api('/events?' + params.toString());
+      currentEvents = res.events || [];
+
+      // تحديث شارات الـ KPIs
+      const total = currentEvents.filter(x => !x.isArchived).length;
+      const pending = currentEvents.filter(x => x.status === 'pending' && !x.isArchived).length;
+      const received = currentEvents.filter(x => (x.status === 'received' || x.status === 'in_progress') && !x.isArchived).length;
+      const completed = currentEvents.filter(x => x.status === 'completed' && !x.isArchived).length;
+
+      if ($('evKpiTotal')) $('evKpiTotal').textContent = total;
+      if ($('evKpiPending')) $('evKpiPending').textContent = pending;
+      if ($('evKpiReceived')) $('evKpiReceived').textContent = received;
+      if ($('evKpiCompleted')) $('evKpiCompleted').textContent = completed;
+
+      if ($('sideEventsBadge')) {
+        $('sideEventsBadge').textContent = pending;
+        $('sideEventsBadge').style.display = pending > 0 ? 'inline-block' : 'none';
+      }
+
+      if ($('evCountLabel')) {
+        $('evCountLabel').textContent = `عرض (${currentEvents.length}) مهمة وحدث`;
+      }
+
+      const tbody = $('eventsTableBody');
+      if (!tbody) return;
+
+      if (!currentEvents.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">لا توجد مهام أو أحداث تطابق البحث والتصفية</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = currentEvents.map(e => `
+        <tr style="${e.isArchived ? 'opacity:0.65;background:#f8fafc' : ''}">
+          <td>
+            <div style="font-weight:800;color:var(--text);font-size:13.5px">${esc(e.title)}</div>
+            ${e.isArchived ? '<span class="badge gray" style="font-size:10px;margin-top:2px">📦 مؤرشفة</span>' : ''}
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">كُلفت بواسطة: ${esc(e.createdBy || 'المدير')} • ${fmtDate(e.createdDate)}</div>
+          </td>
+          <td>${getEventTypeBadge(e.eventType)}</td>
+          <td>
+            <div style="font-weight:700">👤 ${esc(e.assignedUserName || 'غير محدد')}</div>
+          </td>
+          <td>
+            <div style="font-weight:700">${esc(e.eventDate || '—')}</div>
+            <div style="font-size:11.5px;color:var(--muted)">⏰ ${esc(e.eventTime || 'غير محدد')}</div>
+          </td>
+          <td>
+            <div style="font-size:12.5px">${esc(e.location || '—')}</div>
+          </td>
+          <td>
+            ${getEventStatusBadge(e)}
+            ${e.feedbackNotes ? `<div style="font-size:11.5px;color:var(--secondary);margin-top:3px;font-weight:700">💬 ملاحظات: ${esc(e.feedbackNotes.slice(0, 30))}${e.feedbackNotes.length > 30 ? '...' : ''}</div>` : ''}
+          </td>
+          <td>
+            <div class="btn-row" style="gap:4px">
+              <button class="btn btn-outline btn-xs" data-ev-detail="${e.id}" title="عرض كامل التفاصيل والتغذية الراجعة">👁️ عرض</button>
+              <button class="btn btn-primary btn-xs" data-ev-edit="${e.id}" title="تعديل بيانات المهمة">✏️</button>
+              <button class="btn btn-outline btn-xs" data-ev-archive="${e.id}" title="${e.isArchived ? 'استعادة من الأرشيف' : 'أرشفة المهمة'}">${e.isArchived ? '📤' : '📦'}</button>
+              <button class="btn btn-danger btn-xs" data-ev-del="${e.id}" title="حذف المهمة تماماً">🗑️</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      // ربط أزرار الأحداث
+      tbody.querySelectorAll('[data-ev-detail]').forEach(b => {
+        b.onclick = () => {
+          const item = currentEvents.find(x => x.id === b.dataset.evDetail);
+          if (item) showEventDetail(item);
+        };
+      });
+
+      tbody.querySelectorAll('[data-ev-edit]').forEach(b => {
+        b.onclick = () => {
+          const item = currentEvents.find(x => x.id === b.dataset.evEdit);
+          if (item) openEventEditor(item);
+        };
+      });
+
+      tbody.querySelectorAll('[data-ev-archive]').forEach(b => {
+        b.onclick = async () => {
+          const item = currentEvents.find(x => x.id === b.dataset.evArchive);
+          if (!item) return;
+          try {
+            const resArch = await api(`/events/${item.id}/archive`, { method: 'PUT' });
+            toast(resArch.message || 'تم تحديث حالة أرشفة المهمة ✔');
+            renderEvents();
+          } catch(err) { toast(err.message, 'err'); }
+        };
+      });
+
+      tbody.querySelectorAll('[data-ev-del]').forEach(b => {
+        b.onclick = async () => {
+          const item = currentEvents.find(x => x.id === b.dataset.evDel);
+          if (!item) return;
+          if (!confirm(`هل أنت متأكد من حذف المهمة «${item.title}» تماماً من النظام والتطبيق؟`)) return;
+          try {
+            await api(`/events/${item.id}`, { method: 'DELETE' });
+            toast('تم حذف المهمة بنجاح ✔');
+            renderEvents();
+          } catch(err) { toast(err.message, 'err'); }
+        };
+      });
+
+    } catch(err) {
+      toast('تعذر جلب المهام والأحداث: ' + err.message, 'err');
+    }
+  }
+
+  function openEventEditor(item) {
+    const card = $('eventFormCard');
+    if (!card) return;
+    $('eventFormTitle').textContent = item ? `✏️ تعديل المهمة: ${item.title}` : '➕ تكليف بمهمة أو حدث جديد';
+    card.dataset.id = item ? item.id : '';
+    $('efTitle').value = item ? item.title : '';
+    $('efType').value = item ? item.eventType : 'ورشة عمل';
+    $('efAssignedUser').value = item ? item.assignedUserId : '';
+    $('efDate').value = item ? (item.eventDate || todayStr()) : todayStr();
+    $('efTime').value = item ? (item.eventTime || '') : '';
+    $('efLocation').value = item ? (item.location || '') : '';
+    $('efNotes').value = item ? (item.notes || '') : '';
+    card.style.display = 'block';
+    card.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  if ($('btnNewEvent')) $('btnNewEvent').onclick = () => openEventEditor(null);
+  if ($('eventCancelBtn')) $('eventCancelBtn').onclick = () => { if ($('eventFormCard')) $('eventFormCard').style.display = 'none'; };
+  if ($('efCloseBtn')) $('efCloseBtn').onclick = () => { if ($('eventFormCard')) $('eventFormCard').style.display = 'none'; };
+
+  if ($('efSaveBtn')) {
+    $('efSaveBtn').onclick = async () => {
+      const card = $('eventFormCard');
+      const id = card ? card.dataset.id : '';
+      const title = $('efTitle').value.trim();
+      const eventType = $('efType').value.trim();
+      const assignedUserId = $('efAssignedUser').value.trim();
+      const eventDate = $('efDate').value.trim();
+      const eventTime = $('efTime').value.trim();
+      const location = $('efLocation').value.trim();
+      const notes = $('efNotes').value.trim();
+
+      if (!title) { toast('عنوان الحدث أو المهمة مطلوب', 'err'); $('efTitle').focus(); return; }
+      if (!assignedUserId) { toast('يرجى تحديد الموظف المكلف بالمهمة', 'err'); $('efAssignedUser').focus(); return; }
+
+      const body = { title, eventType, assignedUserId, eventDate, eventTime, location, notes };
+
+      try {
+        if (id) {
+          await api(`/events/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+          toast('تم تعديل بيانات المهمة بنجاح ✔');
+        } else {
+          const resNew = await api('/events', { method: 'POST', body: JSON.stringify(body) });
+          toast(resNew.message || 'تم إرسال وتكليف المهمة بنجاح ✔');
+        }
+        if (card) card.style.display = 'none';
+        renderEvents();
+      } catch(err) {
+        toast('خطأ في حفظ المهمة: ' + err.message, 'err');
+      }
+    };
+  }
+
+  // ربط فلاتر البحث التلقائي
+  if ($('evSearch')) $('evSearch').oninput = () => renderEvents();
+  if ($('evFilterUser')) $('evFilterUser').onchange = () => renderEvents();
+  if ($('evFilterType')) $('evFilterType').onchange = () => renderEvents();
+  if ($('evFilterStatus')) $('evFilterStatus').onchange = () => renderEvents();
+  if ($('evFilterArchive')) $('evFilterArchive').onchange = () => renderEvents();
+  if ($('evFilterFrom')) $('evFilterFrom').onchange = () => renderEvents();
+  if ($('evFilterTo')) $('evFilterTo').onchange = () => renderEvents();
+
+  function showEventDetail(e) {
+    const modalBack = $('eventModalBack');
+    if (!modalBack) return;
+    $('evModalTitle').textContent = `📋 تفاصيل المهمة: ${e.title}`;
+
+    let statusDisplay = '';
+    if (e.status === 'completed') {
+      statusDisplay = `<span class="badge green" style="font-size:13px">✅ تم الإنجاز (${fmtDateTime(e.completedAt)})</span>`;
+    } else if (e.status === 'received' || e.status === 'in_progress') {
+      statusDisplay = `<span class="badge blue" style="font-size:13px">📬 استلمها الموظف في: (${fmtDateTime(e.receivedAt)})</span>`;
+    } else {
+      statusDisplay = `<span class="badge warn" style="font-size:13px">⏳ بانتظار تأكيد استلام الموظف</span>`;
+    }
+
+    $('evModalBody').innerHTML = `
+      <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <div>${getEventTypeBadge(e.eventType)}</div>
+          <div>${statusDisplay}</div>
+        </div>
+        <h3 style="margin:0 0 10px;font-size:17px;color:var(--text);font-weight:900">${esc(e.title)}</h3>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.8">
+          📅 تاريخ التكليف بالنظام: <b>${fmtDateTime(e.createdDate)}</b> بواسطة <b>${esc(e.createdBy || 'المدير')}</b>
+        </div>
+      </div>
+
+      <table class="detail-table" style="width:100%;margin-bottom:16px">
+        <tr><th style="width:140px">الموظف المكلف:</th><td><b>👤 ${esc(e.assignedUserName || 'غير محدد')}</b></td></tr>
+        <tr><th>تاريخ ووقت الحدث:</th><td>📅 ${esc(e.eventDate || '—')} &nbsp; ⏰ ${esc(e.eventTime || 'غير محدد')}</td></tr>
+        <tr><th>مكان الحدث / الموقع:</th><td>📍 ${esc(e.location || '—')}</td></tr>
+        <tr><th>حالة الأرشفة:</th><td>${e.isArchived ? '<span class="badge gray">📦 مؤرشفة</span>' : '<span class="badge green">نشطة</span>'}</td></tr>
+        ${e.receivedAt ? `<tr><th>وقت الاستلام الفعلي:</th><td>📬 <b>${fmtDateTime(e.receivedAt)}</b></td></tr>` : ''}
+        ${e.completedAt ? `<tr><th>وقت الإنجاز:</th><td>✅ <b>${fmtDateTime(e.completedAt)}</b></td></tr>` : ''}
+      </table>
+
+      <h4 style="font-size:14px;margin:14px 0 6px;color:var(--text)">📝 الوصف والتعليمات الموجهة للموظف:</h4>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 14px;white-space:pre-wrap;font-size:13.5px;line-height:1.8;margin-bottom:16px">
+        ${esc(e.notes || 'لا توجد تعليمات إضافية مسجلة.')}
+      </div>
+
+      ${e.feedbackNotes ? `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px;margin-top:14px">
+          <h4 style="font-size:14px;margin:0 0 6px;color:#166534">💬 ملاحظات وتغذية راجعة من الموظف المكلف (${esc(e.assignedUserName)}):</h4>
+          <div style="font-size:13.5px;color:#1e293b;line-height:1.8;white-space:pre-wrap">${esc(e.feedbackNotes)}</div>
+        </div>
+      ` : '<div style="font-size:12.5px;color:var(--muted);background:#f8fafc;padding:10px;border-radius:6px">لم يرسل الموظف أي ملاحظات أو تغذية راجعة بعد.</div>'}
+    `;
+
+    // ربط أزرار النافذة
+    if ($('evModalCloseBtn')) $('evModalCloseBtn').onclick = () => modalBack.classList.remove('show');
+    if ($('evModalEditBtn')) {
+      $('evModalEditBtn').onclick = () => {
+        modalBack.classList.remove('show');
+        openEventEditor(e);
+      };
+    }
+    if ($('evModalArchiveBtn')) {
+      $('evModalArchiveBtn').textContent = e.isArchived ? '📤 استعادة من الأرشيف' : '📦 أرشفة';
+      $('evModalArchiveBtn').onclick = async () => {
+        try {
+          const resA = await api(`/events/${e.id}/archive`, { method: 'PUT' });
+          toast(resA.message || 'تم تحديث حالة الأرشفة ✔');
+          modalBack.classList.remove('show');
+          renderEvents();
+        } catch(err) { toast(err.message, 'err'); }
+      };
+    }
+    if ($('evModalDeleteBtn')) {
+      $('evModalDeleteBtn').onclick = async () => {
+        if (!confirm(`حذف المهمة «${e.title}» تماماً من النظام والتطبيق؟`)) return;
+        try {
+          await api(`/events/${e.id}`, { method: 'DELETE' });
+          toast('تم حذف المهمة تماماً ✔');
+          modalBack.classList.remove('show');
+          renderEvents();
+        } catch(err) { toast(err.message, 'err'); }
+      };
+    }
+
+    modalBack.classList.add('show');
   }
 
   /* ================= المستخدمون والصلاحيات ================= */
@@ -1005,14 +1307,14 @@
     $('ufPassword').placeholder = u ? '(اتركه فارغاً للإبقاء على كلمة المرور الحالية)' : 'كلمة المرور';
     $('ufActive').checked = u ? !!u.isActive : true;
     
-    const permKeys = ['Dash', 'Entry', 'Add', 'Reports', 'Edit', 'Delete', 'Print', 'Users', 'Settings'];
+    const permKeys = ['Dash', 'Entry', 'Add', 'Reports', 'Edit', 'Delete', 'Print', 'Events', 'Users', 'Settings'];
     permKeys.forEach(k => {
       const el = $('ufCan' + k);
       if (el) {
         if (u) {
           el.checked = !!u['can' + k];
         } else {
-          el.checked = (k === 'Dash' || k === 'Entry' || k === 'Add' || k === 'Reports' || k === 'Print');
+          el.checked = (k === 'Dash' || k === 'Entry' || k === 'Add' || k === 'Reports' || k === 'Print' || k === 'Events');
         }
       }
     });
@@ -1035,6 +1337,7 @@
       canEdit: !!$('ufCanEdit')?.checked,
       canDelete: !!$('ufCanDelete')?.checked,
       canPrint: !!$('ufCanPrint')?.checked,
+      canEvents: !!$('ufCanEvents')?.checked,
       canUsers: !!$('ufCanUsers')?.checked,
       canSettings: !!$('ufCanSettings')?.checked,
       canOpen: !!$('ufCanEntry')?.checked || !!$('ufCanReports')?.checked

@@ -45,10 +45,29 @@ CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY, deviceId TEXT UNIQUE NOT NULL, deviceName TEXT,
   userId TEXT, userName TEXT, userFullName TEXT, status TEXT DEFAULT 'pending',
   registeredAt TEXT NOT NULL, approvedAt TEXT, lastSeenAt TEXT, approvedBy TEXT);
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  eventType TEXT NOT NULL,
+  notes TEXT,
+  eventDate TEXT,
+  eventTime TEXT,
+  location TEXT,
+  assignedUserId TEXT NOT NULL,
+  assignedUserName TEXT,
+  createdBy TEXT,
+  createdById TEXT,
+  createdDate TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  receivedAt TEXT,
+  completedAt TEXT,
+  feedbackNotes TEXT,
+  isArchived INTEGER DEFAULT 0
+);
 `);
 
 // إضافة أعمدة الصلاحيات المخصصة تلقائياً لقاعدة البيانات عند الحاجة
-['canDash', 'canEntry', 'canReports', 'canReportsEdit', 'canReportsDelete', 'canReportsPrint', 'canUsers', 'canSettings'].forEach(col => {
+['canDash', 'canEntry', 'canReports', 'canReportsEdit', 'canReportsDelete', 'canReportsPrint', 'canEvents', 'canUsers', 'canSettings'].forEach(col => {
   try { db.exec(`ALTER TABLE users ADD COLUMN ${col} INTEGER DEFAULT 0;`); } catch(e){}
 });
 try { db.exec('ALTER TABLE reports ADD COLUMN logoId TEXT DEFAULT "logo1";'); } catch(e){}
@@ -67,7 +86,8 @@ function createAutoBackup(){
   const reports = db.prepare('SELECT * FROM reports').all();
   const settings = db.prepare('SELECT * FROM settings').all();
   const devices = db.prepare('SELECT * FROM devices').all();
-  const dump = { version: '2026-v2', exportedAt: nowIso(), users, reports, settings, devices };
+  const events = db.prepare('SELECT * FROM events').all();
+  const dump = { version: '2026-v2', exportedAt: nowIso(), users, reports, settings, devices, events };
   const jsonContent = JSON.stringify(dump, null, 2);
   const locations = [];
 
@@ -129,6 +149,7 @@ function publicUser(u){
     canReportsEdit: isAdminUser || !!u.canReportsEdit || !!u.canEdit,
     canReportsDelete: isAdminUser || !!u.canReportsDelete || !!u.canDelete,
     canReportsPrint: isAdminUser || !!u.canReportsPrint || !!u.canPrint,
+    canEvents: isAdminUser || !!u.canEvents || !!u.canDash || !!u.canReports,
     canUsers: isAdminUser || !!u.canUsers,
     canSettings: isAdminUser || !!u.canSettings,
     createdAt: u.createdAt
@@ -337,6 +358,43 @@ function listReports(query){
     return { ...rest, imageCount: images.length };
   });
 }
+function listEvents(query = {}){
+  let sql = 'SELECT * FROM events WHERE 1=1';
+  const p = [];
+  if (query.q){
+    sql += ' AND (title LIKE ? OR eventType LIKE ? OR location LIKE ? OR notes LIKE ? OR assignedUserName LIKE ? OR feedbackNotes LIKE ?)';
+    const like = '%' + query.q + '%';
+    p.push(like, like, like, like, like, like);
+  }
+  if (query.status && query.status !== 'all'){
+    sql += ' AND status = ?';
+    p.push(query.status);
+  }
+  if (query.assignedUserId && query.assignedUserId !== 'all'){
+    sql += ' AND assignedUserId = ?';
+    p.push(query.assignedUserId);
+  }
+  if (query.eventType && query.eventType !== 'all'){
+    sql += ' AND eventType = ?';
+    p.push(query.eventType);
+  }
+  if (query.from){
+    sql += ' AND eventDate >= ?';
+    p.push(query.from);
+  }
+  if (query.to){
+    sql += ' AND eventDate <= ?';
+    p.push(query.to);
+  }
+  if (query.isArchived !== undefined && query.isArchived !== '' && query.isArchived !== 'all'){
+    sql += ' AND isArchived = ?';
+    p.push(query.isArchived === '1' || query.isArchived === 1 ? 1 : 0);
+  } else if (query.isArchived === undefined || query.isArchived === '') {
+    sql += ' AND isArchived = 0';
+  }
+  sql += ' ORDER BY eventDate DESC, createdDate DESC';
+  return db.prepare(sql).all(...p);
+}
 function getNextReportNumber(){
   const allReports = db.prepare('SELECT reportNumber FROM reports').all();
   let maxSeq = 0;
@@ -379,11 +437,21 @@ function buildStats(){
     devicesApproved = db.prepare("SELECT COUNT(*) c FROM devices WHERE status='approved'").get().c;
     devicesTotal = db.prepare("SELECT COUNT(*) c FROM devices").get().c;
   } catch(e){}
+
+  let eventsTotal = 0, eventsPending = 0, eventsReceived = 0, eventsCompleted = 0;
+  try {
+    eventsTotal = db.prepare('SELECT COUNT(*) c FROM events WHERE isArchived=0').get().c;
+    eventsPending = db.prepare("SELECT COUNT(*) c FROM events WHERE status='pending' AND isArchived=0").get().c;
+    eventsReceived = db.prepare("SELECT COUNT(*) c FROM events WHERE status IN ('received', 'in_progress') AND isArchived=0").get().c;
+    eventsCompleted = db.prepare("SELECT COUNT(*) c FROM events WHERE status='completed' AND isArchived=0").get().c;
+  } catch(e){}
+
   return {
     usersTotal, usersActive, reportsTotal, reportsToday,
     reportsByRating, reportsPerUser: perUser,
     recentReports,
-    devicesPending, devicesApproved, devicesTotal
+    devicesPending, devicesApproved, devicesTotal,
+    eventsTotal, eventsPending, eventsReceived, eventsCompleted
   };
 }
 
@@ -494,12 +562,12 @@ const server = http.createServer(async (req, res) => {
           id,userName,fullName,passwordHash,role,isActive,
           canOpen,canAdd,canDelete,canEdit,canPrint,
           canDash,canEntry,canReports,canReportsEdit,canReportsDelete,canReportsPrint,
-          canUsers,canSettings,createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          canEvents,canUsers,canSettings,createdAt
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
           .run(id, userName, fullName, b.passwordHash, 'EntryUser', b.isActive?1:0,
             b.canOpen?1:0, b.canAdd?1:0, (b.canDelete || b.canReportsDelete)?1:0, (b.canEdit || b.canReportsEdit)?1:0, (b.canPrint || b.canReportsPrint)?1:0,
             b.canDash?1:0, b.canEntry?1:0, b.canReports?1:0, (b.canReportsEdit || b.canEdit)?1:0, (b.canReportsDelete || b.canDelete)?1:0, (b.canReportsPrint || b.canPrint)?1:0,
-            b.canUsers?1:0, b.canSettings?1:0, nowIso());
+            b.canEvents?1:0, b.canUsers?1:0, b.canSettings?1:0, nowIso());
         send(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) }); return;
       }
     }
@@ -521,7 +589,7 @@ const server = http.createServer(async (req, res) => {
         db.prepare(`UPDATE users SET
           fullName=?, isActive=?, canOpen=?, canAdd=?, canDelete=?, canEdit=?, canPrint=?,
           canDash=?, canEntry=?, canReports=?, canReportsEdit=?, canReportsDelete=?, canReportsPrint=?,
-          canUsers=?, canSettings=?
+          canEvents=?, canUsers=?, canSettings=?
           WHERE id=?`)
           .run(String(b.fullName ?? user.fullName),
             Object.prototype.hasOwnProperty.call(b, 'isActive') ? (b.isActive ? 1 : 0) : user.isActive,
@@ -536,6 +604,7 @@ const server = http.createServer(async (req, res) => {
             canEditVal,
             canDeleteVal,
             canPrintVal,
+            Object.prototype.hasOwnProperty.call(b, 'canEvents') ? (b.canEvents ? 1 : 0) : (user.canEvents ?? 0),
             Object.prototype.hasOwnProperty.call(b, 'canUsers') ? (b.canUsers ? 1 : 0) : (user.canUsers ?? 0),
             Object.prototype.hasOwnProperty.call(b, 'canSettings') ? (b.canSettings ? 1 : 0) : (user.canSettings ?? 0),
             user.id);
@@ -593,6 +662,133 @@ const server = http.createServer(async (req, res) => {
       if (!isAdmin(me) && !can(me, 'canUsers')){ sendError(res, 403, 'غير مصرح'); return; }
       db.prepare('DELETE FROM devices WHERE id=?').run(devDelMatch[1]);
       send(res, 200, { ok: true, message: 'تم حذف الجهاز من السجل بنجاح' }); return;
+    }
+
+    /* ---- المهام والأحداث (Events & Tasks) ---- */
+    if (p === '/api/events/mine' && method === 'GET'){
+      const rows = db.prepare('SELECT * FROM events WHERE assignedUserId=? AND isArchived=0 ORDER BY eventDate DESC, createdDate DESC').all(me.id);
+      send(res, 200, { events: rows }); return;
+    }
+    if (p === '/api/events/mine/count' && method === 'GET'){
+      const c = db.prepare("SELECT COUNT(*) c FROM events WHERE assignedUserId=? AND status='pending' AND isArchived=0").get(me.id).c;
+      send(res, 200, { count: c }); return;
+    }
+    if (p === '/api/events' && method === 'GET'){
+      if (!can(me, 'canEvents')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية عرض الأحداث والمهام'); return; }
+      const q = Object.fromEntries(u.searchParams);
+      send(res, 200, { events: listEvents(q) }); return;
+    }
+    if (p === '/api/events' && method === 'POST'){
+      if (!can(me, 'canEvents')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية إنشاء المهام والأحداث'); return; }
+      const b = await readBody(req);
+      const ev = b.event || b;
+      const title = String(ev.title || '').trim();
+      const eventType = String(ev.eventType || 'مهمة عامة').trim();
+      const assignedUserId = String(ev.assignedUserId || '').trim();
+      if (!title){ sendError(res, 400, 'عنوان أو اسم المهمة مطلوب'); return; }
+      if (!assignedUserId){ sendError(res, 400, 'يجب تحديد الموظف المكلف بالمهمة'); return; }
+
+      const assignedUser = db.prepare('SELECT id, fullName, userName FROM users WHERE id=?').get(assignedUserId);
+      if (!assignedUser){ sendError(res, 404, 'الموظف المحدد غير موجود'); return; }
+
+      const id = uid();
+      const t = nowIso();
+      const eventDate = String(ev.eventDate || todayStr());
+      const eventTime = String(ev.eventTime || '');
+      const location = String(ev.location || '');
+      const notes = String(ev.notes || '');
+
+      db.prepare(`INSERT INTO events(
+        id, title, eventType, notes, eventDate, eventTime, location,
+        assignedUserId, assignedUserName, createdBy, createdById, createdDate,
+        status, receivedAt, completedAt, feedbackNotes, isArchived
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(id, title, eventType, notes, eventDate, eventTime, location,
+          assignedUser.id, assignedUser.fullName, me.fullName, me.id, t,
+          'pending', null, null, null, 0);
+
+      try { createAutoBackup(); } catch(e){}
+      send(res, 200, { ok: true, id, message: `تم إرسال وتكليف المهمة إلى (${assignedUser.fullName}) بنجاح ✔` });
+      return;
+    }
+    const evStatusMatch = p.match(/^\/api\/events\/([^/]+)\/status$/);
+    if (evStatusMatch && method === 'PUT'){
+      const evId = evStatusMatch[1];
+      const event = db.prepare('SELECT * FROM events WHERE id=?').get(evId);
+      if (!event){ sendError(res, 404, 'المهمة غير موجودة'); return; }
+      if (event.assignedUserId !== me.id && !can(me, 'canEvents')){
+        sendError(res, 403, 'غير مصرح: يمكنك فقط تعديل حالة المهام المكلف بها'); return;
+      }
+      const b = await readBody(req);
+      const newStatus = String(b.status || event.status).trim();
+      const feedbackNotes = b.feedbackNotes !== undefined ? String(b.feedbackNotes) : event.feedbackNotes;
+      const t = nowIso();
+      let receivedAt = event.receivedAt;
+      let completedAt = event.completedAt;
+
+      if (newStatus === 'received' && !receivedAt) receivedAt = t;
+      if (newStatus === 'completed') completedAt = t;
+
+      db.prepare('UPDATE events SET status=?, feedbackNotes=?, receivedAt=?, completedAt=? WHERE id=?')
+        .run(newStatus, feedbackNotes, receivedAt, completedAt, event.id);
+
+      try { createAutoBackup(); } catch(e){}
+      send(res, 200, { ok: true, message: 'تم تحديث حالة المهمة بنجاح ✔', status: newStatus, receivedAt, completedAt });
+      return;
+    }
+    const evArchMatch = p.match(/^\/api\/events\/([^/]+)\/archive$/);
+    if (evArchMatch && method === 'PUT'){
+      if (!can(me, 'canEvents')){ sendError(res, 403, 'غير مصرح'); return; }
+      const evId = evArchMatch[1];
+      const event = db.prepare('SELECT * FROM events WHERE id=?').get(evId);
+      if (!event){ sendError(res, 404, 'المهمة غير موجودة'); return; }
+      const b = await readBody(req);
+      const newArch = b.isArchived !== undefined ? (b.isArchived ? 1 : 0) : (event.isArchived ? 0 : 1);
+      db.prepare('UPDATE events SET isArchived=? WHERE id=?').run(newArch, event.id);
+      try { createAutoBackup(); } catch(e){}
+      send(res, 200, { ok: true, isArchived: newArch, message: newArch ? 'تم أرشفة المهمة' : 'تم استعادة المهمة من الأرشيف' });
+      return;
+    }
+    const evMatch = p.match(/^\/api\/events\/([^/]+)$/);
+    if (evMatch){
+      const evId = evMatch[1];
+      const event = db.prepare('SELECT * FROM events WHERE id=?').get(evId);
+      if (!event){ sendError(res, 404, 'المهمة غير موجودة'); return; }
+      if (method === 'GET'){
+        if (event.assignedUserId !== me.id && !can(me, 'canEvents')){ sendError(res, 403, 'غير مصرح'); return; }
+        send(res, 200, { event }); return;
+      }
+      if (method === 'PUT'){
+        if (!can(me, 'canEvents')){ sendError(res, 403, 'غير مصرح: ليس لديك صلاحية تعديل المهام'); return; }
+        const b = await readBody(req);
+        const ev = b.event || b;
+        const title = String(ev.title || event.title).trim();
+        const eventType = String(ev.eventType || event.eventType).trim();
+        const assignedUserId = String(ev.assignedUserId || event.assignedUserId).trim();
+        let assignedUserName = event.assignedUserName;
+        if (assignedUserId !== event.assignedUserId){
+          const uObj = db.prepare('SELECT fullName FROM users WHERE id=?').get(assignedUserId);
+          if (uObj) assignedUserName = uObj.fullName;
+        }
+        db.prepare(`UPDATE events SET
+          title=?, eventType=?, notes=?, eventDate=?, eventTime=?, location=?,
+          assignedUserId=?, assignedUserName=?
+          WHERE id=?`)
+          .run(title, eventType, String(ev.notes ?? event.notes), String(ev.eventDate ?? event.eventDate),
+            String(ev.eventTime ?? event.eventTime), String(ev.location ?? event.location),
+            assignedUserId, assignedUserName, event.id);
+        try { createAutoBackup(); } catch(e){}
+        send(res, 200, { ok: true, message: 'تم تعديل بيانات المهمة بنجاح ✔' }); return;
+      }
+      if (method === 'DELETE'){
+        // يمكن للمدير حذف المهمة، أو يمكن للموظف المكلف حذفها من تطبيقه
+        if (!can(me, 'canEvents') && event.assignedUserId !== me.id){
+          sendError(res, 403, 'غير مصرح: لا تملك صلاحية حذف هذه المهمة'); return;
+        }
+        db.prepare('DELETE FROM events WHERE id=?').run(event.id);
+        try { createAutoBackup(); } catch(e){}
+        send(res, 200, { ok: true, message: 'تم حذف المهمة تماماً من التطبيق بنجاح ✔' }); return;
+      }
     }
 
     /* ---- التقارير ---- */
@@ -797,7 +993,8 @@ const server = http.createServer(async (req, res) => {
         users: db.prepare('SELECT * FROM users').all(),
         reports: db.prepare('SELECT * FROM reports').all().map(parseReportRow),
         settings: db.prepare('SELECT * FROM settings').all(),
-        devices: db.prepare('SELECT * FROM devices').all()
+        devices: db.prepare('SELECT * FROM devices').all(),
+        events: db.prepare('SELECT * FROM events').all()
       };
       send(res, 200, dump); return;
     }
@@ -818,6 +1015,19 @@ const server = http.createServer(async (req, res) => {
         db.exec('DELETE FROM devices;');
         const insD = db.prepare('INSERT OR REPLACE INTO devices(id, deviceId, deviceName, userId, userName, userFullName, status, registeredAt, approvedAt, lastSeenAt, approvedBy) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
         d.devices.forEach(dev => insD.run(dev.id, dev.deviceId, dev.deviceName, dev.userId, dev.userName, dev.userFullName, dev.status, dev.registeredAt, dev.approvedAt, dev.lastSeenAt, dev.approvedBy));
+      }
+      if (Array.isArray(d.events) && d.events.length > 0) {
+        db.exec('DELETE FROM events;');
+        const insE = db.prepare(`INSERT INTO events(
+          id, title, eventType, notes, eventDate, eventTime, location,
+          assignedUserId, assignedUserName, createdBy, createdById, createdDate,
+          status, receivedAt, completedAt, feedbackNotes, isArchived
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+        d.events.forEach(e => insE.run(
+          e.id, e.title, e.eventType, e.notes, e.eventDate, e.eventTime, e.location,
+          e.assignedUserId, e.assignedUserName, e.createdBy, e.createdById, e.createdDate,
+          e.status || 'pending', e.receivedAt || null, e.completedAt || null, e.feedbackNotes || null, e.isArchived ? 1 : 0
+        ));
       }
       const adminCount = db.prepare("SELECT COUNT(*) c FROM users WHERE role='Admin'").get().c;
       if (adminCount === 0){

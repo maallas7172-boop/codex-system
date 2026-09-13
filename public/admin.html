@@ -21,6 +21,7 @@
       <button class="nav-btn active" data-page="dash"><span class="ic">📊</span> لوحة التحكم</button>
       <button class="nav-btn" type="button" onclick="location.href='entry.html'"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
+      <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والأحداث <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
       <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
       <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
     </nav>
@@ -122,6 +123,172 @@
       </div>
     </section>
 
+    <!-- ==================== المهام والأحداث ==================== -->
+    <section class="page" id="eventsPage">
+      <div class="page-head">
+        <div>
+          <h2>📋 جدول المهام والأحداث (Events & Tasks)</h2>
+          <p>تكليف أعضاء الفريق بالمهام والفعاليات ومتابعة استلامها وتأكيد إنجازها والتغذية الراجعة فورياً.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnNewEvent">➕ تكليف بمهمة جديدة</button>
+          <button class="btn btn-outline" onclick="renderEvents()">🔄 تحديث القائمة</button>
+        </div>
+      </div>
+
+      <!-- بطاقات إحصائيات المهام -->
+      <div class="kpis" id="eventsKpiGrid">
+        <div class="kpi blue">
+          <div class="lbl">📋 إجمالي المهام</div>
+          <div class="val" id="evKpiTotal">0</div>
+          <div class="hint">جميع التكليفات النشطة</div>
+        </div>
+        <div class="kpi warn">
+          <div class="lbl">⏳ بانتظار الاستلام</div>
+          <div class="val" id="evKpiPending">0</div>
+          <div class="hint">لم يتم تأكيد استلامها</div>
+        </div>
+        <div class="kpi gold">
+          <div class="lbl">⚙️ تم الاستلام / جارٍ التنفيذ</div>
+          <div class="val" id="evKpiReceived">0</div>
+          <div class="hint">أكد الموظف استلامها</div>
+        </div>
+        <div class="kpi green">
+          <div class="lbl">✅ تم الإنجاز</div>
+          <div class="val" id="evKpiCompleted">0</div>
+          <div class="hint">مهام مكتملة مع التغذية الراجعة</div>
+        </div>
+      </div>
+
+      <!-- نموذج إنشاء / تعديل مهمة -->
+      <div class="card" id="eventFormCard" style="display:none;margin-top:18px">
+        <div class="page-head" style="margin-bottom:14px">
+          <h3 id="eventFormTitle">➕ تكليف بمهمة أو حدث جديد</h3>
+          <button class="btn btn-outline btn-sm" id="eventCancelBtn">إغلاق</button>
+        </div>
+        <div class="form-grid">
+          <div class="field full">
+            <span>عنوان الحدث / المهمة *</span>
+            <input type="text" id="efTitle" placeholder="مثال: حضور ورشة عمل تطوير الخدمات / النزول الميداني للتفتيش..." />
+          </div>
+          <div class="field">
+            <span>نوع الحدث / المهمة *</span>
+            <select id="efType">
+              <option value="ورشة عمل">ورشة عمل</option>
+              <option value="اجتماع إداري">اجتماع إداري</option>
+              <option value="نزول ميداني">نزول ميداني</option>
+              <option value="مهمة تفتيشية">مهمة تفتيشية</option>
+              <option value="مؤتمر / ندوة">مؤتمر / ندوة</option>
+              <option value="حملة توعوية">حملة توعوية</option>
+              <option value="متابعة وإنجاز">متابعة وإنجاز</option>
+              <option value="مهمة خاصة">مهمة خاصة</option>
+              <option value="أخرى">أخرى</option>
+            </select>
+          </div>
+          <div class="field">
+            <span>الموظف المكلف بالمهمة *</span>
+            <select id="efAssignedUser">
+              <option value="">-- اختر الموظف المكلف --</option>
+            </select>
+          </div>
+          <div class="field tight">
+            <span>تاريخ الحدث / التنفيذ</span>
+            <input type="date" id="efDate" />
+          </div>
+          <div class="field tight">
+            <span>وقت الحدث</span>
+            <input type="time" id="efTime" />
+          </div>
+          <div class="field full">
+            <span>مكان الحدث / موقع المهمة</span>
+            <input type="text" id="efLocation" placeholder="مثال: قاعة الاجتماعات الكبرى / فرع المنطقة الشرقية / الموقع الميداني..." />
+          </div>
+          <div class="field full">
+            <span>الوصف والملاحظات والتعليمات التفصيلية للموظف</span>
+            <textarea id="efNotes" style="min-height:90px" placeholder="اكتب هنا كافة التعليمات والتفاصيل والمطلوب من الموظف تنفيذه بدقة..."></textarea>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-primary" id="efSaveBtn">🚀 إرسال وتكليف المهمة</button>
+          <button class="btn btn-outline" id="efCloseBtn">إلغاء</button>
+        </div>
+      </div>
+
+      <!-- شريط البحث والتصفية -->
+      <div class="filter-bar" style="margin-top:18px">
+        <div class="field" style="flex:1.5">
+          <span>بحث</span>
+          <input type="text" id="evSearch" placeholder="ابحث بعنوان المهمة، الموظف، المكان، أو الملاحظات..." />
+        </div>
+        <div class="field">
+          <span>الموظف المكلف</span>
+          <select id="evFilterUser"><option value="">كل الموظفين</option></select>
+        </div>
+        <div class="field">
+          <span>نوع الحدث</span>
+          <select id="evFilterType">
+            <option value="">كل الأنواع</option>
+            <option value="ورشة عمل">ورشة عمل</option>
+            <option value="اجتماع إداري">اجتماع إداري</option>
+            <option value="نزول ميداني">نزول ميداني</option>
+            <option value="مهمة تفتيشية">مهمة تفتيشية</option>
+            <option value="مؤتمر / ندوة">مؤتمر / ندوة</option>
+            <option value="حملة توعوية">حملة توعوية</option>
+            <option value="متابعة وإنجاز">متابعة وإنجاز</option>
+            <option value="مهمة خاصة">مهمة خاصة</option>
+            <option value="أخرى">أخرى</option>
+          </select>
+        </div>
+        <div class="field">
+          <span>حالة المهمة</span>
+          <select id="evFilterStatus">
+            <option value="">كل الحالات</option>
+            <option value="pending">⏳ بانتظار استلام الموظف</option>
+            <option value="received">📬 تم الاستلام / جارٍ التنفيذ</option>
+            <option value="completed">✅ تم الإنجاز</option>
+          </select>
+        </div>
+        <div class="field tight">
+          <span>الأرشيف</span>
+          <select id="evFilterArchive">
+            <option value="0">المهام النشطة</option>
+            <option value="1">المهام المؤرشفة</option>
+            <option value="all">الكل</option>
+          </select>
+        </div>
+        <div class="field tight">
+          <span>من تاريخ</span>
+          <input type="date" id="evFilterFrom" />
+        </div>
+        <div class="field tight">
+          <span>إلى تاريخ</span>
+          <input type="date" id="evFilterTo" />
+        </div>
+        <div class="field tight">
+          <span>&nbsp;</span>
+          <button class="btn btn-outline" onclick="renderEvents()">تصفية</button>
+        </div>
+      </div>
+
+      <div style="font-weight:800;color:var(--muted);margin-bottom:10px" id="evCountLabel"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>عنوان الحدث / المهمة</th>
+              <th>النوع</th>
+              <th>الموظف المكلف</th>
+              <th>تاريخ ووقت الحدث</th>
+              <th>الموقع / المكان</th>
+              <th>حالة الاستلام والتنفيذ</th>
+              <th>إجراءات المدير</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ==================== المستخدمون والصلاحيات ==================== -->
     <section class="page" id="usersPage">
       <div class="page-head">
@@ -163,6 +330,10 @@
             <label class="perm-label"><input type="checkbox" id="ufCanEdit" /> تعديل التقارير</label>
             <label class="perm-label"><input type="checkbox" id="ufCanDelete" /> حذف التقارير</label>
             <label class="perm-label"><input type="checkbox" id="ufCanPrint" checked /> طباعة التقارير</label>
+          </div>
+          <div class="perm-card">
+            <div class="perm-card-head">📋 المهام والأحداث</div>
+            <label class="perm-label"><input type="checkbox" id="ufCanEvents" /> إدارة وتكليف المهام والأحداث</label>
           </div>
           <div class="perm-card">
             <div class="perm-card-head">👥 المستخدمون والصلاحيات</div>
@@ -381,6 +552,24 @@
           <button class="btn btn-secondary btn-sm" id="btnExportWordDetailed" style="flex:1">📥 تصدير Word (تفصيلي)</button>
           <button class="btn btn-outline btn-sm" id="btnExportPdfChoice" style="flex:1">📄 تصدير PDF</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- نافذة تفاصيل المهمة والحدث -->
+<div class="modal-back" id="eventModalBack">
+  <div class="modal" style="max-width:650px">
+    <div class="modal-head">
+      <h3 id="evModalTitle">📋 تفاصيل المهمة والتكليف</h3>
+      <button class="x-btn" id="evModalCloseBtn">✕</button>
+    </div>
+    <div class="modal-body" id="evModalBody" style="padding:16px 20px"></div>
+    <div class="modal-foot" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <button class="btn btn-danger" id="evModalDeleteBtn">🗑️ حذف المهمة</button>
+      <div style="display:flex;gap:8px;margin-right:auto">
+        <button class="btn btn-secondary" id="evModalArchiveBtn">📦 أرشفة</button>
+        <button class="btn btn-primary" id="evModalEditBtn">✏️ تعديل</button>
       </div>
     </div>
   </div>

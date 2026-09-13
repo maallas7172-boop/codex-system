@@ -21,11 +21,12 @@
   if (u.role === 'Admin') $('userAv').textContent = '👑';
 
   // إظهار الأقسام المصرح للمستخدم بالانتقال إليها
-  const hasAnyAdminPerm = u.role === 'Admin' || u.canDash || u.canReports || u.canUsers || u.canSettings;
+  const hasAnyAdminPerm = u.role === 'Admin' || u.canDash || u.canReports || u.canEvents || u.canUsers || u.canSettings;
   if (hasAnyAdminPerm) {
     if ($('adminNav')) $('adminNav').style.display = 'grid';
     if ($('eNavDash')) $('eNavDash').style.display = (u.role === 'Admin' || u.canDash) ? 'flex' : 'none';
     if ($('eNavReports')) $('eNavReports').style.display = (u.role === 'Admin' || u.canReports) ? 'flex' : 'none';
+    if ($('eNavEvents')) $('eNavEvents').style.display = (u.role === 'Admin' || u.canEvents) ? 'flex' : 'none';
     if ($('eNavUsers')) $('eNavUsers').style.display = (u.role === 'Admin' || u.canUsers) ? 'flex' : 'none';
     if ($('eNavSettings')) $('eNavSettings').style.display = (u.role === 'Admin' || u.canSettings) ? 'flex' : 'none';
   } else {
@@ -466,6 +467,251 @@
     };
   }
 
+  /* ================= مهام وتكليفات الموظف (My Tasks & Events) ================= */
+  let myTasksList = [];
+  let currentActiveFeedbackTaskId = null;
+
+  function getMyEventTypeBadge(type) {
+    const map = {
+      'ورشة عمل': 'badge blue',
+      'اجتماع إداري': 'badge warn',
+      'نزول ميداني': 'badge green',
+      'مهمة تفتيشية': 'badge red',
+      'مؤتمر / ندوة': 'badge purple',
+      'حملة توعوية': 'badge teal',
+      'متابعة وإنجاز': 'badge gold',
+      'مهمة خاصة': 'badge dark',
+      'أخرى': 'badge gray'
+    };
+    const c = map[type] || 'badge blue';
+    return `<span class="${c}">📌 ${esc(type || 'مهمة')}</span>`;
+  }
+
+  async function loadMyTasks() {
+    try {
+      const res = await api('/events/mine');
+      myTasksList = res.events || [];
+      const pendingCount = myTasksList.filter(x => x.status === 'pending').length;
+
+      if ($('myTasksBadge')) {
+        $('myTasksBadge').textContent = pendingCount;
+        $('myTasksBadge').style.display = pendingCount > 0 ? 'inline-block' : 'none';
+      }
+
+      if ($('myTasksAlertCount')) {
+        $('myTasksAlertCount').textContent = pendingCount > 0 ? `${pendingCount} جديدة بانتظار الاستلام` : `${myTasksList.length} مهام مسندة`;
+        $('myTasksAlertCount').className = pendingCount > 0 ? 'badge warn' : 'badge green';
+      }
+
+      const container = $('myTasksList');
+      if (!container) return;
+
+      if (!myTasksList.length) {
+        container.innerHTML = `
+          <div class="empty" style="padding:32px 16px;text-align:center">
+            <div style="font-size:42px;margin-bottom:8px">🎉</div>
+            <div style="font-size:15px;font-weight:800;color:var(--text)">لا توجد أي مهام أو تكليفات مسندة إليك حالياً</div>
+            <p style="color:var(--muted);font-size:13px;margin-top:4px">عندما يقوم المدير بإسناد مهمة أو فعالية لحسابك، ستصلك فوراً هنا.</p>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = myTasksList.map(t => {
+        const isPending = t.status === 'pending';
+        const isReceived = t.status === 'received' || t.status === 'in_progress';
+        const isCompleted = t.status === 'completed';
+
+        let statusBadge = '';
+        if (isCompleted) {
+          statusBadge = `<span class="badge green">✅ مكتملة (${fmtDateTime(t.completedAt)})</span>`;
+        } else if (isReceived) {
+          statusBadge = `<span class="badge blue">📬 تم تأكيد استلامك للمهمة (${fmtDateTime(t.receivedAt)})</span>`;
+        } else {
+          statusBadge = `<span class="badge warn">⏳ مهمة جديدة بانتظار تأكيد استلامك</span>`;
+        }
+
+        return `
+          <div class="card" style="padding:16px;border:1px solid ${isPending ? '#fde68a' : (isCompleted ? '#bbf7d0' : 'var(--border)')};background:${isPending ? '#fffdf7' : '#ffffff'};border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.04)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  ${getMyEventTypeBadge(t.eventType)}
+                  <h3 style="margin:0;font-size:16px;font-weight:900;color:var(--text)">${esc(t.title)}</h3>
+                </div>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px">
+                  كُلفت من: <b>${esc(t.createdBy || 'المدير')}</b> • بتاريخ: ${fmtDateTime(t.createdDate)}
+                </div>
+              </div>
+              <div>${statusBadge}</div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;background:#f8fafc;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px">
+              <div>📅 <b>تاريخ التنفيذ:</b> ${esc(t.eventDate || '—')}</div>
+              <div>⏰ <b>الوقت:</b> ${esc(t.eventTime || 'غير محدد')}</div>
+              <div style="grid-column:1/-1">📍 <b>المكان / الموقع:</b> ${esc(t.location || 'غير محدد')}</div>
+            </div>
+
+            <div style="margin-bottom:14px">
+              <div style="font-size:12.5px;font-weight:800;color:var(--text);margin-bottom:4px">📝 تفاصيل وتعليمات المهمة:</div>
+              <div style="font-size:13px;line-height:1.8;color:#334155;background:#fff;border:1px solid var(--border);border-radius:6px;padding:10px;white-space:pre-wrap">${esc(t.notes || 'لا توجد تعليمات إضافية')}</div>
+            </div>
+
+            ${t.feedbackNotes ? `
+              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12.5px">
+                <b style="color:#166534">💬 تغذيتك الراجعة المرسلة للمدير:</b>
+                <div style="color:#1e293b;margin-top:2px;white-space:pre-wrap">${esc(t.feedbackNotes)}</div>
+              </div>
+            ` : ''}
+
+            <div class="btn-row" style="gap:8px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:12px">
+              ${isPending ? `
+                <button class="btn btn-primary btn-sm" data-confirm-receive="${t.id}" style="font-weight:800;padding:8px 16px">
+                  📬 تأكيد استلام المهمة (إشعار المدير بالاستلام)
+                </button>
+              ` : ''}
+
+              ${!isCompleted ? `
+                <button class="btn btn-secondary btn-sm" data-complete-task="${t.id}" style="font-weight:700">
+                  ✅ تم إنجاز المهمة وإرسال التغذية الراجعة
+                </button>
+              ` : `
+                <button class="btn btn-outline btn-sm" data-feedback-task="${t.id}">
+                  💬 تعديل التغذية الراجعة
+                </button>
+              `}
+
+              <button class="btn btn-danger btn-sm" data-delete-task="${t.id}" style="margin-right:auto" title="حذف المهمة نهائياً من هاتفك">
+                🗑️ حذف من التطبيق
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // ربط أزرار تفاعل الموظف مع المهمة
+      container.querySelectorAll('[data-confirm-receive]').forEach(b => {
+        b.onclick = async () => {
+          b.disabled = true;
+          b.textContent = '⏳ جارٍ التأكيد...';
+          try {
+            await api(`/events/${b.dataset.confirmReceive}/status`, {
+              method: 'PUT',
+              body: JSON.stringify({ status: 'received' })
+            });
+            toast('تم تأكيد استلام المهمة وتوثيق الوقت للمدير بنجاح ✔');
+            loadMyTasks();
+          } catch(err) {
+            toast('تعذر تأكيد الاستلام: ' + err.message, 'err');
+            b.disabled = false;
+            b.textContent = '📬 تأكيد استلام المهمة';
+          }
+        };
+      });
+
+      container.querySelectorAll('[data-complete-task]').forEach(b => {
+        b.onclick = () => {
+          const item = myTasksList.find(x => x.id === b.dataset.completeTask);
+          if (item) openFeedbackModal(item, true);
+        };
+      });
+
+      container.querySelectorAll('[data-feedback-task]').forEach(b => {
+        b.onclick = () => {
+          const item = myTasksList.find(x => x.id === b.dataset.feedbackTask);
+          if (item) openFeedbackModal(item, false);
+        };
+      });
+
+      container.querySelectorAll('[data-delete-task]').forEach(b => {
+        b.onclick = async () => {
+          const item = myTasksList.find(x => x.id === b.dataset.deleteTask);
+          if (!item) return;
+          if (!confirm(`هل أنت متأكد من حذف المهمة «${item.title}» تماماً من جهازك؟`)) return;
+          try {
+            await api(`/events/${item.id}`, { method: 'DELETE' });
+            toast('تم حذف المهمة تماماً من تطبيقك بنجاح ✔');
+            loadMyTasks();
+          } catch(err) { toast('تعذر الحذف: ' + err.message, 'err'); }
+        };
+      });
+
+    } catch(err) {
+      console.warn('تعذر تحميل مهام الموظف:', err.message);
+    }
+  }
+
+  function openFeedbackModal(item, defaultCompleted = true) {
+    const modalBack = $('taskFeedbackModal');
+    if (!modalBack) return;
+    currentActiveFeedbackTaskId = item.id;
+    $('tfModalTitle').textContent = defaultCompleted ? `✅ إنجاز المهمة: ${item.title}` : `💬 تغذية راجعة للمدير: ${item.title}`;
+    $('tfTaskSummary').innerHTML = `
+      <b>📋 المهمة:</b> ${esc(item.title)}<br/>
+      <b>📍 المكان:</b> ${esc(item.location || '—')} &nbsp;•&nbsp; <b>📅 التاريخ:</b> ${esc(item.eventDate || '—')}
+    `;
+    $('tfNotes').value = item.feedbackNotes || '';
+    $('tfMarkCompleted').checked = defaultCompleted || item.status === 'completed';
+    modalBack.classList.add('show');
+    $('tfNotes').focus();
+  }
+
+  if ($('tfCloseBtn')) $('tfCloseBtn').onclick = () => $('taskFeedbackModal')?.classList.remove('show');
+  if ($('tfCancelBtn')) $('tfCancelBtn').onclick = () => $('taskFeedbackModal')?.classList.remove('show');
+
+  if ($('tfSubmitBtn')) {
+    $('tfSubmitBtn').onclick = async () => {
+      if (!currentActiveFeedbackTaskId) return;
+      const notes = $('tfNotes').value.trim();
+      const markCompleted = $('tfMarkCompleted').checked;
+      const targetStatus = markCompleted ? 'completed' : 'in_progress';
+
+      $('tfSubmitBtn').disabled = true;
+      $('tfSubmitBtn').textContent = '⏳ جارٍ الإرسال...';
+      try {
+        await api(`/events/${currentActiveFeedbackTaskId}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: targetStatus, feedbackNotes: notes })
+        });
+        toast('تم إرسال التغذية الراجعة وتحديث حالة المهمة للمدير بنجاح ✔');
+        $('taskFeedbackModal')?.classList.remove('show');
+        loadMyTasks();
+      } catch(err) {
+        toast('خطأ في إرسال التغذية الراجعة: ' + err.message, 'err');
+      } finally {
+        $('tfSubmitBtn').disabled = false;
+        $('tfSubmitBtn').textContent = '🚀 إرسال التغذية الراجعة للمدير';
+      }
+    };
+  }
+
+  /* تبديل العرض بين شاشة إدخال التقارير وشاشة مهام الموظف */
+  function showTasksView() {
+    if ($('myTasksBox')) $('myTasksBox').style.display = 'block';
+    if ($('draftBox')) $('draftBox').style.display = 'none';
+    if ($('formCard')) $('formCard').style.display = 'none';
+    if ($('entryReportsHead')) $('entryReportsHead').style.display = 'none';
+    if ($('eNavMyTasks')) $('eNavMyTasks').classList.add('active');
+    if ($('eNavEntry')) $('eNavEntry').classList.remove('active');
+    loadMyTasks();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function showReportsView() {
+    if ($('myTasksBox')) $('myTasksBox').style.display = 'none';
+    if ($('entryReportsHead')) $('entryReportsHead').style.display = 'flex';
+    if ($('eNavMyTasks')) $('eNavMyTasks').classList.remove('active');
+    if ($('eNavEntry')) $('eNavEntry').classList.add('active');
+    renderDrafts();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if ($('eNavMyTasks')) $('eNavMyTasks').onclick = showTasksView;
+  if ($('btnToggleTasksView')) $('btnToggleTasksView').onclick = showTasksView;
+  if ($('eNavEntry')) $('eNavEntry').onclick = showReportsView;
+  if ($('btnBackToReportsFromTasks')) $('btnBackToReportsFromTasks').onclick = showReportsView;
+  if ($('btnRefreshMyTasks')) $('btnRefreshMyTasks').onclick = loadMyTasks;
+
   bindPhotoAdd();
   renderDrafts();
+  loadMyTasks();
 })();
