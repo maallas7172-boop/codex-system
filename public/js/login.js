@@ -11,6 +11,21 @@
   const params = new URLSearchParams(location.search);
   if (params.get('blocked') === '1') show('تم إغلاق الدخول لهذا المستخدم إلى أن يعيد المدير منحه صلاحية جديدة', 'err');
 
+  // زر إظهار / إخفاء كلمة المرور
+  const toggleBtn = document.getElementById('toggleLoginPasswordBtn');
+  const pwdInput = document.getElementById('password');
+  if (toggleBtn && pwdInput) {
+    toggleBtn.onclick = () => {
+      if (pwdInput.type === 'password') {
+        pwdInput.type = 'text';
+        toggleBtn.textContent = '🙈';
+      } else {
+        pwdInput.type = 'password';
+        toggleBtn.textContent = '👁️';
+      }
+    };
+  }
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const userName = document.getElementById('userName').value.trim();
@@ -45,7 +60,7 @@
         const offline = getOfflineAuth();
         if (offline && offline.userName && offline.userName.toLowerCase() === userName.toLowerCase()) {
           if (offline.passwordHash && passwordHash && offline.passwordHash === passwordHash) {
-            localStorage.setItem(TOKEN_KEY, offline.token || 'offline-token');
+            setToken(offline.token || 'offline-token');
             setMe({ token: offline.token || 'offline-token', user: offline.user }, passwordHash);
             show('تم الدخول بنجاح في وضع عدم الاتصال (أوفلاين) ✔', 'ok');
             setTimeout(() => {
@@ -75,7 +90,8 @@
         throw new Error((data && data.error) || 'فشل تسجيل الدخول');
       }
       if (!data || !data.token || !data.user) throw new Error('لم تكتمل استجابة الخادم. أعد المحاولة.');
-      localStorage.setItem(TOKEN_KEY, data.token);
+      
+      setToken(data.token);
       setMe(data, passwordHash);
 
       // التوجيه الديناميكي وفق الصلاحيات الممنوحة من المدير

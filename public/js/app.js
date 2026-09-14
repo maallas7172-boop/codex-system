@@ -11,9 +11,44 @@ const OFFLINE_AUTH_KEY = 'offline_auth_profile_v2';
 
 let __me = null;
 
+function isMobileApp() {
+  return (typeof window.Capacitor !== 'undefined' && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : true)) || location.protocol === 'capacitor:';
+}
+
+function getToken() {
+  return sessionStorage.getItem(TOKEN_KEY) || (isMobileApp() ? localStorage.getItem(TOKEN_KEY) : null) || '';
+}
+
+function setToken(token) {
+  if (token) {
+    sessionStorage.setItem(TOKEN_KEY, token);
+    if (isMobileApp()) {
+      localStorage.setItem(TOKEN_KEY, token);
+    }
+  }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(CACHED_USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(CACHED_USER_KEY);
+  } catch(e) {}
+  __me = null;
+}
+
+async function logout() {
+  try {
+    await api('/logout', { method: 'POST' });
+  } catch(e) {}
+  clearSession();
+  location.replace('login.html');
+}
+
 function getCachedMe() {
   try {
-    const raw = localStorage.getItem(CACHED_USER_KEY);
+    const raw = isMobileApp() ? localStorage.getItem(CACHED_USER_KEY) : sessionStorage.getItem(CACHED_USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch (e) { return null; }
 }
@@ -29,7 +64,10 @@ function setMe(m, passwordHash = null) {
   __me = m;
   if (m) {
     try {
-      localStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
+      sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
+      if (isMobileApp()) {
+        localStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
+      }
       if (m.user && m.user.userName) {
         const existing = getOfflineAuth();
         const toSave = {
@@ -38,7 +76,7 @@ function setMe(m, passwordHash = null) {
           role: m.user.role,
           passwordHash: passwordHash || (existing && existing.userName && existing.userName.toLowerCase() === m.user.userName.toLowerCase() ? existing.passwordHash : null),
           user: m.user,
-          token: m.token || localStorage.getItem(TOKEN_KEY) || 'offline-token',
+          token: m.token || getToken() || 'offline-token',
           savedAt: new Date().toISOString()
         };
         localStorage.setItem(OFFLINE_AUTH_KEY, JSON.stringify(toSave));
@@ -49,31 +87,35 @@ function setMe(m, passwordHash = null) {
 
 async function currentMe() {
   if (__me) return __me;
+  const token = getToken();
   const cached = getCachedMe();
-  const token = localStorage.getItem(TOKEN_KEY);
 
-  // إذا لم يكن هناك جلسة مخزنة ولا توكن، لا يمكن المتابعة
-  if (!token && (!cached || !cached.user)) {
+  // إذا لم يكن هناك جلسة نشطة، يلزم تسجيل الدخول
+  if (!token && (!isMobileApp() || !cached || !cached.user)) {
+    clearSession();
     throw new Error('لا توجد جلسة نشطة');
   }
 
-  // إذا كان الجهاز في وضع عدم الاتصال بالإنترنت تماماً، استخدم الجلسة المحلية المخزنة
-  if (!navigator.onLine && cached && cached.user) {
+  // إذا كان الهاتف في وضع عدم الاتصال بالإنترنت تماماً
+  if (!navigator.onLine && cached && cached.user && isMobileApp()) {
     __me = cached;
     return __me;
   }
 
   try {
-    // محاولة الاتصال بالخادم وتحديث الجلسة
     const d = await api('/me');
     setMe(d);
     return __me;
   } catch (err) {
-    // في حال تعذر الاتصال بالخادم (انقطاع إنترنت أو بطء شبكة)، نعتمد تلقائياً على الجلسة المحلية
-    if (cached && cached.user) {
+    if (err && (err.message.includes('انتهت الجلسة') || err.message.includes('401') || err.message.includes('غير مصرح'))) {
+      clearSession();
+      throw err;
+    }
+    if (!navigator.onLine && cached && cached.user && isMobileApp()) {
       __me = cached;
       return __me;
     }
+    clearSession();
     throw err;
   }
 }
@@ -142,17 +184,14 @@ function getDeviceName() {
   try { name = localStorage.getItem(DEVICE_NAME_KEY) || getCookie(DEVICE_NAME_KEY); } catch(e){}
   if (!name) {
     const ua = navigator.userAgent || '';
-    let detected = 'هاتف ميداني';
+    const isNativeApp = (typeof window.Capacitor !== 'undefined' && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : true)) || location.protocol === 'capacitor:';
+    let detected = isNativeApp ? 'تطبيق أندرويد (APK)' : 'هاتف ميداني';
     if (/Android/i.test(ua)) {
       const model = ua.match(/;\s*([^;]+)\s+Build\//);
-      if (model && model[1]) {
-        detected = model[1].trim() + ' (Android)';
-      } else {
-        const vMatch = ua.match(/Android\s+([\d.]+)/);
-        detected = 'هاتف أندرويد' + (vMatch ? ' (v' + vMatch[1] + ')' : '');
-      }
+      const phoneModel = model && model[1] ? model[1].trim() : 'أندرويد';
+      detected = phoneModel + (isNativeApp ? ' (تطبيق APK)' : ' (هاتف أندرويد)');
     } else if (/iPhone/i.test(ua)) {
-      detected = 'هاتف آيفون (iPhone)';
+      detected = 'هاتف آيفون (iPhone)' + (isNativeApp ? ' (تطبيق iOS)' : '');
     } else if (/iPad/i.test(ua)) {
       detected = 'جهاز آيباد (iPad)';
     } else if (/Windows/i.test(ua)) {
@@ -229,7 +268,7 @@ async function testServerConnection(url) {
 
 /* ---------- الشبكة ---------- */
 async function api(pathname, opts = {}) {
-  const token = localStorage.getItem(TOKEN_KEY) || '';
+  const token = getToken() || '';
   const headers = {
     'Content-Type': 'application/json',
     'X-Device-Id': getDeviceId(),
@@ -251,8 +290,8 @@ async function api(pathname, opts = {}) {
     throw new Error('الخادم أرسل استجابة غير صالحة.');
   }
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    location.href = 'login.html';
+    clearSession();
+    location.replace('login.html');
     throw new Error('انتهت الجلسة');
   }
   if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ (' + res.status + ')');

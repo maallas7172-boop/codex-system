@@ -89,15 +89,59 @@
 
   function updateDashUI(s) {
     if (!s) return;
+    const pendingCount = s.devicesPending || 0;
+
+    // تحديث بانر إشعار الأجهزة المعلقة في لوحة التحكم
+    const banner = $('dashPendingDevicesBanner');
+    if (banner) {
+      if (pendingCount > 0) {
+        banner.style.display = 'block';
+        if ($('dashBannerPendingCount')) $('dashBannerPendingCount').textContent = pendingCount;
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+    const appAllBannerBtn = $('dashBannerApproveAllBtn');
+    if (appAllBannerBtn && !appAllBannerBtn._bound) {
+      appAllBannerBtn._bound = true;
+      appAllBannerBtn.onclick = async () => {
+        try {
+          const res = await api('/devices/approve-all', { method: 'POST' });
+          toast(res.message || 'تم اعتماد وتفعيل كافة الأجهزة بنجاح ✔');
+          renderDash();
+          renderDevices();
+        } catch(e) { toast(e.message, 'err'); }
+      };
+    }
+    const viewDevBannerBtn = $('dashBannerViewDevicesBtn');
+    if (viewDevBannerBtn && !viewDevBannerBtn._bound) {
+      viewDevBannerBtn._bound = true;
+      viewDevBannerBtn.onclick = () => {
+        const usersBtn = document.querySelector('.nav-btn[data-page="users"]');
+        if (usersBtn) usersBtn.click();
+        setTimeout(() => {
+          const devEl = $('devicesTableBody');
+          if (devEl) devEl.scrollIntoView({ behavior: 'smooth' });
+        }, 300);
+      };
+    }
+
+    // تحديث شارة التنبيه في القائمة الجانبية
+    const sideBadge = $('sideDevicesBadge');
+    if (sideBadge) {
+      sideBadge.textContent = pendingCount;
+      sideBadge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+    }
+
     const kpis = [
       { l: 'إجمالي التقارير', v: s.reportsTotal, h: 'في قاعدة البيانات', c: 'blue', i: '📄' },
       { l: 'تقارير اليوم', v: s.reportsToday, h: 'بتاريخ ' + todayStr(), c: 'green', i: '📅' },
       { l: 'المستخدمون', v: s.usersTotal, h: s.usersActive + ' نشط', c: 'blue', i: '👥' },
-      { l: 'الهواتف المعتمدة', v: s.devicesApproved || 0, h: (s.devicesPending ? '⚠️ ' + s.devicesPending + ' بانتظار الاعتماد' : 'كافة الهواتف مصرحة'), c: (s.devicesPending ? 'warn' : 'green'), i: '📱' }
+      { l: 'الهواتف المعتمدة', v: s.devicesApproved || 0, h: (pendingCount ? '⚠️ ' + pendingCount + ' بانتظار الاعتماد' : 'كافة الهواتف مصرحة'), c: (pendingCount ? 'warn' : 'green'), i: '📱' }
     ];
     if ($('kpiGrid')) {
       $('kpiGrid').innerHTML = kpis.map(k => `
-        <div class="kpi ${k.c}">
+        <div class="kpi ${k.c}" style="cursor:pointer" onclick="${k.i === '📱' ? 'document.querySelector(\'.nav-btn[data-page=users]\').click()' : ''}">
           <div class="lbl">${k.i} ${k.l}</div>
           <div class="val">${k.v}</div>
           <div class="hint">${k.h}</div>
@@ -1112,29 +1156,46 @@
       const d = await api('/users');
       const list = d.users.filter(u => u.userName.toLowerCase().includes(($('userSearch').value || '').trim().toLowerCase()));
       $('userTableBody').innerHTML = list.map(u => {
+        const curPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
         if (u.role === 'Admin') {
           return `<tr>
-            <td><div class="rep-row"><div class="rep-badge" style="background:var(--gold-soft);color:var(--gold)">👑</div><div><b>${esc(u.fullName)}</b><div class="s" style="color:var(--muted);font-size:12px">${esc(u.userName)}</div></div></div></td>
+            <td>
+              <div class="rep-row">
+                <div class="rep-badge" style="background:var(--gold-soft);color:var(--gold)">👑</div>
+                <div>
+                  <b>${esc(u.fullName)}</b>
+                  <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(u.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
+                </div>
+              </div>
+            </td>
             <td>${badgeStatus(u.isActive ? 'نشط' : 'غير نشط')}</td>
             <td><span class="badge blue">👑 مدير النظام (كافة الصلاحيات)</span></td>
             <td>${fmtDate(u.createdAt)}</td>
             <td>
               <div class="btn-row" style="gap:6px">
-                <button class="btn btn-outline btn-xs" data-edit="${u.id}">✏️ تعديل</button>
+                <button class="btn btn-outline btn-xs" data-edit="${u.id}">✏️ تعديل / كشف كلمة المرور</button>
                 <button class="btn btn-outline btn-xs" data-pwd="${u.id}">🔑 كلمة المرور</button>
               </div>
             </td>
           </tr>`;
         }
         return `<tr>
-          <td><div class="rep-row"><div class="rep-badge">👤</div><div><b>${esc(u.fullName)}</b><div class="s" style="color:var(--muted);font-size:12px">${esc(u.userName)}</div></div></div></td>
+          <td>
+            <div class="rep-row">
+              <div class="rep-badge">👤</div>
+              <div>
+                <b>${esc(u.fullName)}</b>
+                <div class="s" style="color:var(--muted);font-size:12px">👤 ${esc(u.userName)} &nbsp;|&nbsp; 🔑 <span style="font-family:monospace;background:#f1f5f9;padding:1px 6px;border-radius:4px" title="كلمة المرور: ${esc(curPw)}">••••••</span></div>
+              </div>
+            </div>
+          </td>
           <td>${badgeStatus(u.isActive ? 'نشط' : 'غير نشط')}</td>
           <td><div class="chips" style="gap:4px;max-width:240px">${permBadges(u)}</div></td>
           <td>${fmtDate(u.createdAt)}</td>
           <td>
             <div class="btn-row" style="gap:6px">
-              <button class="btn btn-primary btn-xs" data-edit="${u.id}">⚙️ تعديل</button>
-              <button class="btn btn-outline btn-xs" data-pwd="${u.id}">🔑</button>
+              <button class="btn btn-primary btn-xs" data-edit="${u.id}">⚙️ تعديل / كشف كلمة المرور</button>
+              <button class="btn btn-outline btn-xs" data-pwd="${u.id}" title="تعديل أو كشف كلمة المرور">🔑</button>
               <button class="btn btn-danger btn-xs" data-del="${u.id}">🗑</button>
             </div>
           </td>
@@ -1186,9 +1247,11 @@
         toggle.onchange = async () => {
           try {
             await api('/settings', { method: 'PUT', body: JSON.stringify({ enforceDeviceAuth: toggle.checked }) });
-            toast(toggle.checked ? 'تم تفعيل نظام حماية واعتماد الأجهزة ✔' : 'تم إيقاف فحص الأجهزة (السماح بالدخول المباشر) 🔓');
+            toast(toggle.checked ? 'تم تفعيل نظام حماية واعتماد الأجهزة ✔' : 'تم إيقاف فحص الأجهزة (السماح بالدخول المباشر واعتماد المعلقة) 🔓');
             updateDeviceAuthBadge(toggle.checked);
             if (me.settings) me.settings.enforceDeviceAuth = toggle.checked;
+            renderDevices();
+            if (typeof renderDash === 'function') renderDash();
           } catch (err) {
             toast(err.message, 'err');
             toggle.checked = !toggle.checked;
@@ -1207,7 +1270,7 @@
           const res = await api('/devices/approve-all', { method: 'POST' });
           toast(res.message || 'تم اعتماد وتفعيل كافة الأجهزة المعلقة بنجاح ✔');
           renderDevices();
-          if (typeof renderStats === 'function') renderStats();
+          if (typeof renderDash === 'function') renderDash();
         } catch (err) { toast(err.message, 'err'); }
       };
     }
@@ -1263,7 +1326,7 @@
             const res = await api('/devices/' + b.dataset.approve + '/approve', { method: 'POST' });
             toast(res.message || 'تم اعتماد الهاتف وتفعيله بشكل دائم ✔');
             renderDevices();
-            if (typeof renderStats === 'function') renderStats();
+            if (typeof renderDash === 'function') renderDash();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
@@ -1274,25 +1337,23 @@
             const res = await api('/devices/' + b.dataset.block + '/block', { method: 'POST' });
             toast(res.message || 'تم حظر وتوقيف الهاتف 🚫', 'err');
             renderDevices();
-            if (typeof renderStats === 'function') renderStats();
+            if (typeof renderDash === 'function') renderDash();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
 
       document.querySelectorAll('[data-deldev]').forEach(b => {
         b.onclick = async () => {
-          if (!confirm('حذف هذا الجهاز من السجل؟')) return;
+          if (!confirm('حذف هذا الجهاز من سجل النظام؟')) return;
           try {
             await api('/devices/' + b.dataset.deldev, { method: 'DELETE' });
-            toast('تم حذف الجهاز من السجل');
+            toast('تم حذف الجهاز');
             renderDevices();
-            if (typeof renderStats === 'function') renderStats();
+            if (typeof renderDash === 'function') renderDash();
           } catch (e) { toast(e.message, 'err'); }
         };
       });
-    } catch (err) {
-      if ($('devicesTableBody')) $('devicesTableBody').innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--danger)">تعذر تحميل الأجهزة: ${esc(err.message)}</td></tr>`;
-    }
+    } catch (err) { toast(err.message, 'err'); }
   }
   window.renderDevices = renderDevices;
 
@@ -1301,10 +1362,35 @@
   function openUserEditor(u) {
     $('userFormTitle').textContent = u ? 'تعديل المستخدم: ' + u.fullName : 'إضافة مستخدم جديد';
     $('ufUserName').value = u ? u.userName : '';
-    $('ufUserName').readOnly = false; // السماح بتعديل اسم الدخول
+    $('ufUserName').readOnly = false;
     $('ufFullName').value = u ? u.fullName : '';
-    $('ufPassword').value = '';
-    $('ufPassword').placeholder = u ? '(اتركه فارغاً للإبقاء على كلمة المرور الحالية)' : 'كلمة المرور';
+    
+    // وضع كلمة المرور الحالية للمستخدم
+    const currentPw = u ? (u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456')) : '';
+    $('ufPassword').value = currentPw;
+    $('ufPassword').type = 'password';
+
+    const togglePwBtn = $('toggleUfPasswordBtn');
+    if (togglePwBtn) {
+      togglePwBtn.textContent = '👁️';
+      togglePwBtn.title = 'إظهار كلمة المرور';
+      if (!togglePwBtn._bound) {
+        togglePwBtn._bound = true;
+        togglePwBtn.onclick = () => {
+          const inp = $('ufPassword');
+          if (inp.type === 'password') {
+            inp.type = 'text';
+            togglePwBtn.textContent = '🙈';
+            togglePwBtn.title = 'إخفاء كلمة المرور';
+          } else {
+            inp.type = 'password';
+            togglePwBtn.textContent = '👁️';
+            togglePwBtn.title = 'إظهار كلمة المرور';
+          }
+        };
+      }
+    }
+
     $('ufActive').checked = u ? !!u.isActive : true;
     
     const permKeys = ['Dash', 'Entry', 'Add', 'Reports', 'Edit', 'Delete', 'Print', 'Events', 'Users', 'Settings'];
@@ -1328,6 +1414,9 @@
     const userName = $('ufUserName').value.trim();
     const fullName = $('ufFullName').value.trim();
     if (!userName || !fullName) { toast('الاسم واسم المستخدم مطلوبان', 'err'); return; }
+    const pw = $('ufPassword').value.trim();
+    if (!id && !pw) { toast('كلمة المرور مطلوبة للمستخدم الجديد', 'err'); return; }
+
     const body = {
       userName, fullName, isActive: $('ufActive').checked,
       canDash: !!$('ufCanDash')?.checked,
@@ -1342,30 +1431,49 @@
       canSettings: !!$('ufCanSettings')?.checked,
       canOpen: !!$('ufCanEntry')?.checked || !!$('ufCanReports')?.checked
     };
-    const pw = $('ufPassword').value;
-    if (pw) body.passwordHash = await sha256Hex(pw);
-    if (!id && !pw) { toast('كلمة المرور مطلوبة للمستخدم الجديد', 'err'); return; }
+    if (pw) {
+      body.plainPassword = pw;
+      body.password = pw;
+      body.passwordHash = await sha256Hex(pw);
+    }
     try {
       if (id) await api('/users/' + id, { method: 'PUT', body: JSON.stringify(body) });
       else await api('/users', { method: 'POST', body: JSON.stringify(body) });
-      toast('تم حفظ المستخدم وصلاحياته ✔');
+      toast('تم حفظ المستخدم وصلاحياته وكلمة المرور بنجاح ✔');
       $('userForm').style.display = 'none';
       renderUsers();
     } catch (err) { toast(err.message, 'err'); }
   };
 
   function openPwdEditor(u) {
-    if (!confirm('تعيين كلمة مرور جديدة للمستخدم «' + u.fullName + '»؟')) return;
-    const pw = prompt('كلمة المرور الجديدة (6 أحرف على الأقل):');
+    if (!u) return;
+    const currentPw = u.plainPassword || (u.userName === 'admin' ? 'Admin@123' : '123456');
+    const pw = prompt(`تعديل أو كشف كلمة المرور للمستخدم «${u.fullName}»:\n\nكلمة المرور الحالية: [ ${currentPw} ]\n\nأدخل كلمة المرور الجديدة في حال رغبت بتعديلها:`, currentPw);
     if (!pw) return;
-    if (pw.length < 6) { toast('كلمة المرور قصيرة جداً', 'err'); return; }
+    const trimmed = pw.trim();
+    if (!trimmed) return;
+    if (trimmed.length < 3) { toast('كلمة المرور قصيرة جداً', 'err'); return; }
     (async () => {
       try {
-        await api('/users/' + u.id, { method: 'PUT', body: JSON.stringify({ passwordHash: await sha256Hex(pw) }) });
-        toast('تم تغيير كلمة المرور ✔');
+        await api('/users/' + u.id, {
+          method: 'PUT',
+          body: JSON.stringify({ plainPassword: trimmed, password: trimmed, passwordHash: await sha256Hex(trimmed) })
+        });
+        toast('تم تحديث وحفظ كلمة المرور بنجاح ✔');
+        renderUsers();
       } catch (err) { toast(err.message, 'err'); }
     })();
   }
+
+  // فحص دوري للأجهزة والإحصائيات كل 6 ثوانٍ للتنبيه الفوري
+  setInterval(async () => {
+    try {
+      const s = await api('/stats');
+      if (s) {
+        updateDashUI(s);
+      }
+    } catch(e){}
+  }, 6000);
 
   /* ================= الإعدادات وتخصيص الترويسة ================= */
   let customLogoBase64 = '';

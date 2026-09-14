@@ -15,8 +15,17 @@ const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = fs.existsSync(path.join(ROOT, '..', 'data')) ? path.join(ROOT, '..', 'data') : path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'system.db');
+
+let EMBEDDED_BUFFERS = null;
+try {
+  const embeddedModule = require('./embedded_assets');
+  if (embeddedModule && embeddedModule.assets) {
+    EMBEDDED_BUFFERS = embeddedModule.assets;
+  }
+} catch (e) {}
+
 // المنفذ الأساسي هو 80 حتى يعمل النظام بدون كتابة رقم منفذ في المتصفح.
 // يمكن تغييره فقط عند الحاجة عبر PORT=8765 node server.js.
 const PORT = parseInt(process.env.PORT || '80', 10);
@@ -45,6 +54,8 @@ CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY, deviceId TEXT UNIQUE NOT NULL, deviceName TEXT,
   userId TEXT, userName TEXT, userFullName TEXT, status TEXT DEFAULT 'pending',
   registeredAt TEXT NOT NULL, approvedAt TEXT, lastSeenAt TEXT, approvedBy TEXT);
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY, userId TEXT NOT NULL, expires INTEGER NOT NULL, createdAt TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -66,10 +77,11 @@ CREATE TABLE IF NOT EXISTS events (
 );
 `);
 
-// إضافة أعمدة الصلاحيات المخصصة تلقائياً لقاعدة البيانات عند الحاجة
-['canDash', 'canEntry', 'canReports', 'canReportsEdit', 'canReportsDelete', 'canReportsPrint', 'canEvents', 'canUsers', 'canSettings'].forEach(col => {
+// إضافة أعمدة الصلاحيات المخصصة وتخزين كلمة المرور للمعاينة لقاعدة البيانات عند الحاجة
+['canDash', 'canEntry', 'canReports', 'canReportsEdit', 'canReportsDelete', 'canReportsPrint', 'canEvals', 'canEvalsAdd', 'canEvalsDelete', 'canEvents', 'canUsers', 'canSettings'].forEach(col => {
   try { db.exec(`ALTER TABLE users ADD COLUMN ${col} INTEGER DEFAULT 0;`); } catch(e){}
 });
+try { db.exec('ALTER TABLE users ADD COLUMN plainPassword TEXT;'); } catch(e){}
 try { db.exec('ALTER TABLE reports ADD COLUMN logoId TEXT DEFAULT "logo1";'); } catch(e){}
 
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -135,8 +147,10 @@ function getSetting(k, def){ const r = db.prepare('SELECT value FROM settings WH
 function setSetting(k, v){ db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v)); }
 function publicUser(u){
   const isAdminUser = u.role === 'Admin';
+  const defaultPw = u.userName === 'admin' ? 'Admin@123' : (u.userName === 'ahmed' || u.userName === 'sara' || u.userName === 'khaled' ? '123456' : '');
   return {
     id: u.id, userName: u.userName, fullName: u.fullName, role: u.role,
+    plainPassword: u.plainPassword || defaultPw,
     isActive: !!u.isActive,
     canOpen: isAdminUser || !!u.canOpen || !!u.canReports || !!u.canEntry,
     canAdd: isAdminUser || !!u.canAdd,
@@ -200,7 +214,17 @@ function checkDeviceAuth(user, req) {
     return { ok: false, code: 'DEVICE_BLOCKED', message: '🚫 تم حظر هذا الهاتف من الاتصال بالنظام من قِبل مدير النظام.' };
   }
 
-  if (enforce && dev.status === 'pending') {
+  // إذا تم تعطيل فحص الأجهزة، يتم قبول أي جهاز معلق وتفعيله تلقائياً فوراً
+  if (!enforce) {
+    if (dev.status === 'pending') {
+      db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE id=?")
+        .run(nowIso(), 'تلقائي (تعطيل نظام الفحص)', dev.id);
+      dev.status = 'approved';
+    }
+    return { ok: true, device: dev };
+  }
+
+  if (dev.status === 'pending') {
     return { ok: false, code: 'DEVICE_PENDING', message: '📱 هذا الهاتف قيد المراجعة وبانتظار اعتماد مدير النظام. يرجى إبلاغ المدير لتفعيل هاتفك من لوحة التحكم.' };
   }
 
@@ -228,27 +252,48 @@ function buildMe(user){
   };
 }
 
-/* ------------------------- الجلسات ------------------------- */
-const sessions = new Map(); // token -> {userId, expires}
+/* ------------------------- الجلسات المستقرة في قاعدة البيانات ------------------------- */
 function createSession(userId){
   const token = crypto.randomUUID();
-  sessions.set(token, { userId, expires: Date.now() + SESSION_TTL });
+  const expires = Date.now() + SESSION_TTL;
+  try {
+    db.prepare('INSERT OR REPLACE INTO sessions(token, userId, expires, createdAt) VALUES(?,?,?,?)')
+      .run(token, userId, expires, nowIso());
+  } catch(e){}
   return token;
 }
+
 function cleanupSessions(){
-  const now = Date.now();
-  for (const [t, s] of sessions) if (s.expires < now) sessions.delete(t);
+  try {
+    db.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now());
+  } catch(e){}
 }
+
 function auth(req){
-  cleanupSessions();
   const h = req.headers.authorization || '';
   const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
-  const s = tok && sessions.get(tok);
-  if (!s) return null;
-  return db.prepare('SELECT * FROM users WHERE id=?').get(s.userId) || null;
+  if (!tok) return null;
+  try {
+    const row = db.prepare('SELECT userId, expires FROM sessions WHERE token=?').get(tok);
+    if (!row) return null;
+    if (row.expires < Date.now()) {
+      db.prepare('DELETE FROM sessions WHERE token=?').run(tok);
+      return null;
+    }
+    return db.prepare('SELECT * FROM users WHERE id=?').get(row.userId) || null;
+  } catch(e) {
+    return null;
+  }
 }
 function isAdmin(u){ return u && u.role === 'Admin'; }
 function can(u, p){ return isAdmin(u) || (u && !!u[p]); }
+
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
 
 /* ------------------------- أدوات HTTP ------------------------- */
 function send(res, code, obj){
@@ -286,31 +331,52 @@ const MIME = {
 };
 function serveStatic(req, res, pathname){
   let file = pathname === '/' ? '/index.html' : pathname;
-  const full = path.normalize(path.join(PUBLIC, file));
-  if (!full.startsWith(PUBLIC)){ sendError(res, 403, 'ممنوع'); return; }
-  fs.readFile(full, (err, data) => {
-    if (err){ sendError(res, 404, 'الملف غير موجود'); return; }
+  if (EMBEDDED_BUFFERS && EMBEDDED_BUFFERS[file]) {
+    const asset = EMBEDDED_BUFFERS[file];
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
-      'Content-Length': data.length,
+      'Content-Type': asset.mime,
+      'Content-Length': asset.data.length,
       'Cache-Control': 'no-store, no-cache, must-revalidate'
     });
-    res.end(data);
-  });
+    res.end(asset.data);
+    return;
+  }
+  if (fs.existsSync(PUBLIC)) {
+    const full = path.normalize(path.join(PUBLIC, file));
+    if (full.startsWith(PUBLIC) && fs.existsSync(full) && !fs.statSync(full).isDirectory()){
+      fs.readFile(full, (err, data) => {
+        if (err){ sendError(res, 404, 'الملف غير موجود'); return; }
+        res.writeHead(200, {
+          'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
+          'Content-Length': data.length,
+          'Cache-Control': 'no-store, no-cache, must-revalidate'
+        });
+        res.end(data);
+      });
+      return;
+    }
+  }
+  sendError(res, 404, 'الملف غير موجود');
 }
 
 /* ------------------------- بذر البيانات التجريبية ------------------------- */
 function seed(){
   const count = db.prepare('SELECT COUNT(*) c FROM users').get().c;
-  if (count > 0) return;
+  if (count > 0) {
+    try {
+      db.prepare("UPDATE users SET plainPassword='Admin@123' WHERE userName='admin' AND (plainPassword IS NULL OR plainPassword='')").run();
+      db.prepare("UPDATE users SET plainPassword='123456' WHERE userName IN ('ahmed','sara','khaled') AND (plainPassword IS NULL OR plainPassword='')").run();
+    } catch(e){}
+    return;
+  }
   const t = nowIso();
   const adminId = uid();
-  db.prepare('INSERT INTO users(id,userName,fullName,passwordHash,role,isActive,canOpen,canAdd,canDelete,canEdit,canPrint,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(adminId, 'admin', 'مدير النظام', hashHex('Admin@123'), 'Admin', 1, 1, 1, 1, 1, 1, t);
+  db.prepare('INSERT INTO users(id,userName,fullName,passwordHash,plainPassword,role,isActive,canOpen,canAdd,canDelete,canEdit,canPrint,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(adminId, 'admin', 'مدير النظام', hashHex('Admin@123'), 'Admin@123', 'Admin', 1, 1, 1, 1, 1, 1, t);
   const mkUser = (userName, fullName, pw, o) => {
     const id = uid();
-    db.prepare('INSERT INTO users(id,userName,fullName,passwordHash,role,isActive,canOpen,canAdd,canDelete,canEdit,canPrint,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-      .run(id, userName, fullName, hashHex(pw), 'EntryUser', o.active?1:0, o.canOpen?1:0, o.canAdd?1:0, o.canDelete?1:0, o.canEdit?1:0, o.canPrint?1:0, t);
+    db.prepare('INSERT INTO users(id,userName,fullName,passwordHash,plainPassword,role,isActive,canOpen,canAdd,canDelete,canEdit,canPrint,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, userName, fullName, hashHex(pw), pw, 'EntryUser', o.active?1:0, o.canOpen?1:0, o.canAdd?1:0, o.canDelete?1:0, o.canEdit?1:0, o.canPrint?1:0, t);
     return id;
   };
   const ahmed = mkUser('ahmed', 'أحمد محمد', '123456', { active:1, canOpen:1, canAdd:1, canDelete:0, canEdit:0, canPrint:1 });
@@ -474,7 +540,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   const u = new URL(req.url, 'http://localhost');
-  const p = u.pathname;
+  const p = (u.pathname.length > 1 && u.pathname.endsWith('/')) ? u.pathname.slice(0, -1) : u.pathname;
   const method = req.method;
 
   /* ملفات ثابتة */
@@ -525,7 +591,9 @@ const server = http.createServer(async (req, res) => {
     if (method === 'POST' && p === '/api/logout'){
       const h = req.headers.authorization || '';
       const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
-      if (tok) sessions.delete(tok);
+      if (tok) {
+        try { db.prepare('DELETE FROM sessions WHERE token=?').run(tok); } catch(e){}
+      }
       try { createAutoBackup(); } catch(e){}
       send(res, 200, { ok: true, message: 'تم الخروج بنجاح وتفعيل النسخ الاحتياطي التلقائي' }); return;
     }
@@ -555,16 +623,18 @@ const server = http.createServer(async (req, res) => {
         const userName = String(b.userName||'').trim();
         const fullName = String(b.fullName||'').trim();
         if (!userName || !fullName) { sendError(res, 400, 'اسم المستخدم والاسم الكامل مطلوبان'); return; }
-        if (!b.passwordHash) { sendError(res, 400, 'كلمة المرور مطلوبة'); return; }
+        const pPlain = b.plainPassword !== undefined ? String(b.plainPassword).trim() : (b.password !== undefined ? String(b.password).trim() : '');
+        const pHash = b.passwordHash || (pPlain ? hashHex(pPlain) : '');
+        if (!pHash) { sendError(res, 400, 'كلمة المرور مطلوبة'); return; }
         if (db.prepare('SELECT id FROM users WHERE userName=?').get(userName)){ sendError(res, 409, 'اسم المستخدم موجود مسبقاً'); return; }
         const id = uid();
         db.prepare(`INSERT INTO users(
-          id,userName,fullName,passwordHash,role,isActive,
+          id,userName,fullName,passwordHash,plainPassword,role,isActive,
           canOpen,canAdd,canDelete,canEdit,canPrint,
           canDash,canEntry,canReports,canReportsEdit,canReportsDelete,canReportsPrint,
           canEvents,canUsers,canSettings,createdAt
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(id, userName, fullName, b.passwordHash, 'EntryUser', b.isActive?1:0,
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(id, userName, fullName, pHash, pPlain || '123456', 'EntryUser', b.isActive?1:0,
             b.canOpen?1:0, b.canAdd?1:0, (b.canDelete || b.canReportsDelete)?1:0, (b.canEdit || b.canReportsEdit)?1:0, (b.canPrint || b.canReportsPrint)?1:0,
             b.canDash?1:0, b.canEntry?1:0, b.canReports?1:0, (b.canReportsEdit || b.canEdit)?1:0, (b.canReportsDelete || b.canDelete)?1:0, (b.canReportsPrint || b.canPrint)?1:0,
             b.canEvents?1:0, b.canUsers?1:0, b.canSettings?1:0, nowIso());
@@ -616,7 +686,12 @@ const server = http.createServer(async (req, res) => {
             db.prepare('UPDATE users SET userName=? WHERE id=?').run(newUserName, user.id);
           }
         }
-        if (b.passwordHash) db.prepare('UPDATE users SET passwordHash=? WHERE id=?').run(b.passwordHash, user.id);
+        const updatedPlain = b.plainPassword !== undefined ? String(b.plainPassword).trim() : (b.password !== undefined ? String(b.password).trim() : null);
+        const updatedHash = b.passwordHash || (updatedPlain ? hashHex(updatedPlain) : null);
+        if (updatedHash) {
+          db.prepare('UPDATE users SET passwordHash=?, plainPassword=? WHERE id=?')
+            .run(updatedHash, updatedPlain || '', user.id);
+        }
         send(res, 200, { user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(user.id)) }); return;
       }
       if (method === 'DELETE'){
@@ -1046,12 +1121,20 @@ const server = http.createServer(async (req, res) => {
       if (method === 'PUT'){
         const b = await readBody(req);
         if (b.consumeAddAfterSync != null) setSetting('consumeAddAfterSync', b.consumeAddAfterSync ? '1' : '0');
-        if (b.enforceDeviceAuth != null) setSetting('enforceDeviceAuth', b.enforceDeviceAuth ? '1' : '0');
+        if (b.enforceDeviceAuth != null) {
+          const isEnforced = b.enforceDeviceAuth ? '1' : '0';
+          setSetting('enforceDeviceAuth', isEnforced);
+          if (isEnforced === '0') {
+            // اعتماد كافة الهواتف المعلقة تلقائياً عند تعطيل نظام الفحص
+            db.prepare("UPDATE devices SET status='approved', approvedAt=?, approvedBy=? WHERE status='pending'")
+              .run(nowIso(), 'تلقائي (تعطيل نظام الفحص)');
+          }
+        }
         if (b.reportHeaderConfig != null) {
           const val = typeof b.reportHeaderConfig === 'object' ? JSON.stringify(b.reportHeaderConfig) : String(b.reportHeaderConfig);
           setSetting('reportHeaderConfig', val);
         }
-        send(res, 200, { settings: buildMe(me).settings, message: 'تم حفظ الإعدادات بنجاح' }); return;
+        send(res, 200, { settings: buildMe(me).settings, message: 'تم حفظ الإعدادات وتحديث حالة الأجهزة بنجاح ✔' }); return;
       }
     }
 

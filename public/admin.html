@@ -22,7 +22,7 @@
       <button class="nav-btn" type="button" onclick="location.href='entry.html'"><span class="ic">📝</span> إدخال تقرير</button>
       <button class="nav-btn" data-page="reports"><span class="ic">📄</span> التقارير</button>
       <button class="nav-btn" data-page="events"><span class="ic">📋</span> المهام والأحداث <span class="badge warn" id="sideEventsBadge" style="display:none;margin-right:auto;font-size:10px;padding:1px 6px">0</span></button>
-      <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والصلاحيات</button>
+      <button class="nav-btn" data-page="users"><span class="ic">👥</span> المستخدمون والأجهزة <span class="badge warn" id="sideDevicesBadge" style="display:none;margin-right:auto;font-size:10.5px;padding:2px 7px;border-radius:10px;background:#ea580c;color:#fff">0</span></button>
       <button class="nav-btn" data-page="settings"><span class="ic">⚙️</span> الإعدادات</button>
     </nav>
     <div class="side-foot">
@@ -48,6 +48,23 @@
           <p>إحصائيات حية عن التقارير والمستخدمين في النظام.</p>
         </div>
         <button class="btn btn-outline btn-sm" onclick="renderDash()">🔄 تحديث</button>
+      </div>
+
+      <!-- بانر إشعار الأجهزة المعلقة -->
+      <div id="dashPendingDevicesBanner" style="display:none;background:#fff7ed;border:2px solid #ea580c;border-radius:12px;padding:14px 18px;margin-bottom:18px;box-shadow:0 4px 12px rgba(234,88,12,0.15)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:28px">📱</span>
+            <div>
+              <b style="color:#9a3412;font-size:15px">تنبيه: يوجد (<span id="dashBannerPendingCount">0</span>) هاتف جديد بانتظار موافقة واعتماد المدير!</b>
+              <div style="font-size:12.5px;color:#c2410c;margin-top:2px">يرجى اعتماد الهاتف للسماح للموظف بالدخول وإرسال التقارير.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" id="dashBannerApproveAllBtn" style="background:#ea580c;border-color:#ea580c">✅ اعتماد كافة الهواتف الآن</button>
+            <button class="btn btn-outline btn-sm" id="dashBannerViewDevicesBtn">📋 عرض الأجهزة</button>
+          </div>
+        </div>
       </div>
 
       <div class="filter-bar" style="margin-bottom:18px">
@@ -308,7 +325,13 @@
         <div class="form-grid">
           <div class="field"><span>اسم المستخدم (للدخول) *</span><input type="text" id="ufUserName" placeholder="مثال: ahmed" /></div>
           <div class="field"><span>الاسم الكامل *</span><input type="text" id="ufFullName" placeholder="مثال: أحمد محمد" /></div>
-          <div class="field"><span>كلمة المرور</span><input type="password" id="ufPassword" placeholder="كلمة المرور" /></div>
+          <div class="field">
+            <span>كلمة المرور *</span>
+            <div style="position:relative;display:flex;align-items:center">
+              <input type="password" id="ufPassword" placeholder="أدخل كلمة المرور..." style="padding-left:42px;width:100%" />
+              <button type="button" id="toggleUfPasswordBtn" style="position:absolute;left:8px;background:none;border:none;cursor:pointer;font-size:16px;padding:4px;color:var(--muted)" title="إظهار / إخفاء كلمة المرور">👁️</button>
+            </div>
+          </div>
           <div class="field"><span>الحالة</span><label style="flex-direction:row;align-items:center;gap:8px;font-weight:800;color:var(--text)"><input type="checkbox" id="ufActive" checked style="width:auto" /> مستخدم نشط</label></div>
         </div>
         <h3 style="margin:20px 0 6px;font-size:15px">🔐 الصلاحيات المخصصة لكل واجهة (يحددها المدير)</h3>
