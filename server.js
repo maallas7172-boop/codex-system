@@ -26,12 +26,11 @@ try {
   }
 } catch (e) {}
 
-// المنفذ الأساسي هو 80 حتى يعمل النظام بدون كتابة رقم منفذ في المتصفح.
-// يمكن تغييره فقط عند الحاجة عبر PORT=8765 node server.js.
 const PORT = parseInt(process.env.PORT || '80', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const SALT = 'spa_static_salt_2026';
-const SESSION_TTL = 48 * 3600 * 1000;
+const SERVER_AUTH_SECRET = 'reports_system_hmac_secret_key_v2026';
+const SESSION_TTL = 30 * 24 * 3600 * 1000; // 30 يوماً لضمان استقرار الجلسة وعدم الخروج المفاجئ
 const MAX_BODY = 60 * 1024 * 1024;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -252,10 +251,11 @@ function buildMe(user){
   };
 }
 
-/* ------------------------- الجلسات المستقرة في قاعدة البيانات ------------------------- */
+/* ------------------------- الجلسات المستقرة في قاعدة البيانات مع التوقيع المشفر ------------------------- */
 function createSession(userId){
-  const token = crypto.randomUUID();
   const expires = Date.now() + SESSION_TTL;
+  const sig = crypto.createHmac('sha256', SERVER_AUTH_SECRET).update(userId + '.' + expires).digest('hex');
+  const token = `${userId}.${expires}.${sig}`;
   try {
     db.prepare('INSERT OR REPLACE INTO sessions(token, userId, expires, createdAt) VALUES(?,?,?,?)')
       .run(token, userId, expires, nowIso());
@@ -271,19 +271,44 @@ function cleanupSessions(){
 
 function auth(req){
   const h = req.headers.authorization || '';
-  const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
+  const tok = h.startsWith('Bearer ') ? h.slice(7).trim() : null;
   if (!tok) return null;
+
+  // 1. فحص مباشر في جدول الجلسات بقاعدة البيانات
   try {
     const row = db.prepare('SELECT userId, expires FROM sessions WHERE token=?').get(tok);
-    if (!row) return null;
-    if (row.expires < Date.now()) {
-      db.prepare('DELETE FROM sessions WHERE token=?').run(tok);
-      return null;
+    if (row) {
+      if (row.expires < Date.now()) {
+        db.prepare('DELETE FROM sessions WHERE token=?').run(tok);
+        return null;
+      }
+      return db.prepare('SELECT * FROM users WHERE id=?').get(row.userId) || null;
     }
-    return db.prepare('SELECT * FROM users WHERE id=?').get(row.userId) || null;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) {}
+
+  // 2. التحقق الذاتي من التوقيع الرقمي (للحفاظ على الجلسة حتى عند إعادة تشغيل السيرفر السحابي أو تحديثه)
+  try {
+    const parts = tok.split('.');
+    if (parts.length === 3) {
+      const [userId, expiresStr, sig] = parts;
+      const expires = parseInt(expiresStr, 10);
+      if (!isNaN(expires) && expires > Date.now()) {
+        const expectedSig = crypto.createHmac('sha256', SERVER_AUTH_SECRET).update(userId + '.' + expiresStr).digest('hex');
+        if (sig === expectedSig) {
+          const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+          if (user && user.isActive) {
+            try {
+              db.prepare('INSERT OR REPLACE INTO sessions(token, userId, expires, createdAt) VALUES(?,?,?,?)')
+                .run(tok, userId, expires, nowIso());
+            } catch(e){}
+            return user;
+          }
+        }
+      }
+    }
+  } catch(e) {}
+
+  return null;
 }
 function isAdmin(u){ return u && u.role === 'Admin'; }
 function can(u, p){ return isAdmin(u) || (u && !!u[p]); }

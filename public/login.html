@@ -18,9 +18,11 @@
 <body>
 <main class="login-wrap">
   <div class="login-card">
-    <div class="login-logo" style="font-size:48px">🧮</div>
+    <div style="text-align:center;margin-bottom:14px">
+      <img src="Image/codex_logo.jpg" alt="شركة كودكس للبرمجيات" style="width:80px;height:80px;object-fit:cover;border-radius:20px;box-shadow:0 10px 24px rgba(37,99,235,0.25);border:2px solid #ffffff" />
+    </div>
     <h1>إدارة الحسابات</h1>
-    <p class="sub">منظومة إدارة الحسابات والتقارير المالية والميدانية.</p>
+    <p class="sub">منظومة إدارة الحسابات والتقارير المالية والميدانية</p>
     <form id="loginForm" class="form-grid">
       <div class="field full">
         <span>اسم المستخدم</span>
@@ -33,13 +35,22 @@
           <button type="button" class="btn btn-outline" id="toggleLoginPasswordBtn" style="padding:0 12px;font-size:16px" title="إظهار / إخفاء كلمة المرور">👁️</button>
         </div>
       </div>
-      <button type="submit" class="btn btn-primary full" id="loginBtn" style="margin-top:6px">دخول</button>
+      <button type="submit" class="btn btn-primary full" id="loginBtn" style="margin-top:6px;font-size:15px;padding:12px">تسجيل الدخول</button>
     </form>
     <div id="loginMessage" class="login-msg"></div>
+
+    <div class="login-company-footer">
+      <div>💻 تطوير وبرمجة: <strong>شركة كودكس للبرمجيات</strong></div>
+      <div style="margin-top:4px">
+        <span>خدمة العملاء والدعم الفني: </span>
+        <a href="tel:783745550" class="dev-phone">📞 783745550</a>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">جميع الحقوق محفوظة © 2026</div>
+    </div>
   </div>
 </main>
-<script src="js/config.js?v=20260901-8"></script>
-<script src="js/app.js?v=20260901-8"></script>
-<script src="js/login.js?v=20260901-8"></script>
+<script src="js/config.js?v=20260901-9"></script>
+<script src="js/app.js?v=20260901-9"></script>
+<script src="js/login.js?v=20260901-9"></script>
 </body>
 </html>

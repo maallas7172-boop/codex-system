@@ -16,15 +16,15 @@ function isMobileApp() {
 }
 
 function getToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || (isMobileApp() ? localStorage.getItem(TOKEN_KEY) : null) || '';
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '';
 }
 
 function setToken(token) {
   if (token) {
-    sessionStorage.setItem(TOKEN_KEY, token);
-    if (isMobileApp()) {
+    try {
       localStorage.setItem(TOKEN_KEY, token);
-    }
+      sessionStorage.setItem(TOKEN_KEY, token);
+    } catch(e) {}
   }
 }
 
@@ -48,7 +48,7 @@ async function logout() {
 
 function getCachedMe() {
   try {
-    const raw = isMobileApp() ? localStorage.getItem(CACHED_USER_KEY) : sessionStorage.getItem(CACHED_USER_KEY);
+    const raw = localStorage.getItem(CACHED_USER_KEY) || sessionStorage.getItem(CACHED_USER_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch (e) { return null; }
 }
@@ -64,10 +64,8 @@ function setMe(m, passwordHash = null) {
   __me = m;
   if (m) {
     try {
+      localStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
       sessionStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
-      if (isMobileApp()) {
-        localStorage.setItem(CACHED_USER_KEY, JSON.stringify(m));
-      }
       if (m.user && m.user.userName) {
         const existing = getOfflineAuth();
         const toSave = {
@@ -91,13 +89,13 @@ async function currentMe() {
   const cached = getCachedMe();
 
   // إذا لم يكن هناك جلسة نشطة، يلزم تسجيل الدخول
-  if (!token && (!isMobileApp() || !cached || !cached.user)) {
+  if (!token && (!cached || !cached.user)) {
     clearSession();
     throw new Error('لا توجد جلسة نشطة');
   }
 
-  // إذا كان الهاتف في وضع عدم الاتصال بالإنترنت تماماً
-  if (!navigator.onLine && cached && cached.user && isMobileApp()) {
+  // إذا كان الجهاز في وضع عدم الاتصال بالإنترنت تماماً
+  if (!navigator.onLine && cached && cached.user) {
     __me = cached;
     return __me;
   }
@@ -111,7 +109,8 @@ async function currentMe() {
       clearSession();
       throw err;
     }
-    if (!navigator.onLine && cached && cached.user && isMobileApp()) {
+    // في حال حدوث انقطاع مؤقت في الشبكة مع وجود جلسة مخزنة، نستمر في الجلسة دون إخراج المستخدم
+    if (cached && cached.user) {
       __me = cached;
       return __me;
     }
@@ -291,7 +290,9 @@ async function api(pathname, opts = {}) {
   }
   if (res.status === 401) {
     clearSession();
-    location.replace('login.html');
+    if (!location.pathname.endsWith('login.html')) {
+      location.replace('login.html');
+    }
     throw new Error('انتهت الجلسة');
   }
   if (!res.ok) throw new Error((data && data.error) || 'حدث خطأ (' + res.status + ')');
