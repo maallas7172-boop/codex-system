@@ -285,8 +285,16 @@ async function api(pathname, opts = {}) {
   }
   let data = null;
   const raw = await res.text();
-  try { data = raw ? JSON.parse(raw) : null; } catch (e) {
-    throw new Error('الخادم أرسل استجابة غير صالحة.');
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error('⏳ الخادم السحابي قيد الاستيقاظ الآن (Cold Start)... يرجى الانتظار بضع ثوانٍ.');
+    }
+    if (res.status === 404) {
+      throw new Error('⚠️ المسار المطلوب غير موجود في الخادم (404).');
+    }
+    throw new Error('الخادم أرسل استجابة غير متوقعة (كود ' + res.status + ').');
   }
   if (res.status === 401) {
     clearSession();
